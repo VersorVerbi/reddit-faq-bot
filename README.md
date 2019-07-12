@@ -7,7 +7,7 @@ FAQ bot for the r/Catholicism subreddit
 ### As an Administrator
 Run the program initially with `python faqbot.py initial` to do the first major download of historical posts on the subreddit.
 
-If the script crashes after that initial load is complete, you can restart it with just `python faqbot.py`.
+If the script crashes after that initial load is complete, you can restart it with just `python faqbot.py`. By default, any posts made in the intervening time will be ignored by the bot (i.e., they will be added to historical data, but the bot will not reply to them).
 
 ## How to Make Your Own for Another Subreddit
 Using config/constants.py.example, create your own constants.py file.
