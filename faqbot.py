@@ -6,6 +6,12 @@ from config import constants
 def remove_nonalpha(matchobj):
     return ''
 
+def post_is_processed(postID, db):
+    cursor = db.cursor()
+    query = "SELECT isKwProcessed FROM faq_posts WHERE id=%s"
+    cursor.execute(query, postID)
+    return cursor.fetchone().isKwProcessed > 0
+
 def process_post(post, db, initialLoad):
     postID = post.id
     
@@ -29,12 +35,6 @@ def process_post(post, db, initialLoad):
     # TODO: do other stuff, like add a comment with links and a quote
     # TODO: mark the post as processed
     return
-
-def post_is_processed(postID, db):
-    cursor = db.cursor()
-    query = "SELECT isKwProcessed FROM faq_posts WHERE id=%s"
-    cursor.execute(query, postID)
-    return cursor.fetchone().isKwProcessed > 0
 
 def relevant_posts(keywords): # TODO
     # with all keywords do SQL:
