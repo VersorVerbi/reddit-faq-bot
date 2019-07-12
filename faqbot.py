@@ -1,7 +1,7 @@
 import praw
 import mysql.connector
 import re
-import constants
+from config import constants
 
 def remove_nonalpha(matchobj):
     return ''
@@ -176,9 +176,9 @@ def initial_data_load(subreddit, db, fromCrash):
 
 
 #main -----------------------------------
-r = praw.Reddit(user_agent=constants.USER_AGENT, client_id=constants.CLIENT_ID, client_secret=constants.CLIENT_SECRET, username=constants.REDDIT_USER, password=constants.REDDIT_PASSWORD)
-db = mysql.connector.connect(user=constants.SQL_USER, password=constants.SQL_PASSWORD, host='localhost', database=constants.SQL_DATABASE)
-
+r = praw.Reddit(user_agent=constants.USER_AGENT, client_id=constants.CLIENT_ID, client_secret=constants.CLIENT_SECRET, username=constants.REDDIT_USER, password=constants.REDDIT_PW)
+db = mysql.connector.connect(user=constants.SQL_USER, password=constants.SQL_PW, host='localhost', database=constants.SQL_DATABASE)
+raise Exception('connections worked, as did importing constants')
 try:
     subr = r.subreddit(constants.SUBREDDIT_NAME)
     initial_data_load(subr, db, False)
