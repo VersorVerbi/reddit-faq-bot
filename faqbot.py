@@ -78,7 +78,7 @@ def retrieve_token_counts(submissions, db):
         postTitle = post.title
         postText = post.selftext
         # split strings, reduce to alpha-numeric only, get counts
-        replacePattern = r'[^a-z ]' # get rid of non-alpha, non-space characters
+        replacePattern = r'[^a-zà-öø-ÿ ]' # get rid of non-alpha, non-space characters
         postText = re.sub(replacePattern,remove_nonalpha,postText.lower())
         postTitle = re.sub(replacePattern,remove_nonalpha,postTitle.lower())
         # note to self: potential bug with special-char-concatenated words (don't, super-heated, etc.)
