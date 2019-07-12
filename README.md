@@ -5,7 +5,7 @@ FAQ bot for the r/Catholicism subreddit
 ### On Reddit
 
 ### As an Administrator
-Run the program initially with `python faqbot.py -initial` to do the first major download of historical posts on the subreddit.
+Run the program initially with `python faqbot.py initial` to do the first major download of historical posts on the subreddit.
 
 If the script crashes after that initial load is complete, you can restart it with just `python faqbot.py`.
 
