@@ -11,7 +11,9 @@ def post_is_processed(postID, db):
     cursor = db.cursor()
     query = "SELECT isKwProcessed FROM faq_posts WHERE id=%s"
     cursor.execute(query, postID)
-    return cursor.fetchone().isKwProcessed > 0
+    is_processed = cursor.fetchone().isKwProcessed > 0
+    cursor.close()
+    return is_processed
 
 def process_post(post, db, initialLoad):
     postID = post.id
