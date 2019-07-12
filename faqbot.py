@@ -62,7 +62,6 @@ def find_keywords(postText): # TODO
 def retrieve_token_counts(submissions, db):
     i = 0
     for post in submissions:
-        i = i + 1
         postID = post.id
         # if in posts SQL table already, do nothing
         cursor = db.cursor()
@@ -74,15 +73,14 @@ def retrieve_token_counts(submissions, db):
             continue
         #print(postID)
         cursor.close()
+        i = i + 1
         # get post text data
         postTitle = post.title
         postText = post.selftext
         # split strings, reduce to alpha-numeric only, get counts
         replacePattern = r'[^a-z ]' # get rid of non-alpha, non-space characters
-        postText = postText.lower()
-        postText = re.sub(replacePattern,remove_nonalpha,postText)
-        postTitle = postTitle.lower()
-        postTitle = re.sub(replacePattern,remove_nonalpha,postTitle)
+        postText = re.sub(replacePattern,remove_nonalpha,postText.lower())
+        postTitle = re.sub(replacePattern,remove_nonalpha,postTitle.lower())
         # note to self: potential bug with special-char-concatenated words (don't, super-heated, etc.)
         textArray = postTitle.split() + postText.split()
         textSet = set(textArray)
@@ -172,7 +170,6 @@ def initial_data_load(subreddit, db, fromCrash):
     submissions.append(subreddit.new())
     for postList in submissions:
         retrieve_token_counts(postList, db)
-    raise Exception('quit after retrieving token counts')
     return
 
 
@@ -180,9 +177,9 @@ def initial_data_load(subreddit, db, fromCrash):
 r = praw.Reddit(user_agent=constants.USER_AGENT, client_id=constants.CLIENT_ID, client_secret=constants.CLIENT_SECRET, username=constants.REDDIT_USER, password=constants.REDDIT_PW)
 db = mysql.connector.connect(user=constants.SQL_USER, password=constants.SQL_PW, host='localhost', database=constants.SQL_DATABASE)
 if len(sys.argv) > 1:
-    fromCrash = (sys.argv[1] == 'initial')
+	fromCrash = (sys.argv[1] == 'initial')
 else:
-    fromCrash = True
+	fromCrash = True
 
 try:
     subr = r.subreddit(constants.SUBREDDIT_NAME)
