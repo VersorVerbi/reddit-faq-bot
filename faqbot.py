@@ -22,12 +22,7 @@ def process_post(post, db, initialLoad):
     if post_is_processed(postID, db):
         return
     
-    if not post.is_self and not initialLoad:
-        postLink = post.url
-        # TODO: get posts with the same links
-        searchString = "url:" + postLink
-
-        # TODO: if none exist, do the normal thing with just the title as a query-weighted string
+    # TODO: decide whether we want to deal with link posts at all
     postText = post.title + chr(7) + post.selftext
     postKeywords = find_keywords(postText)
     if initialLoad:
@@ -64,6 +59,8 @@ def find_keywords(postText): # TODO
 def retrieve_token_counts(submissions, db):
     i = 0
     for post in submissions:
+        if not post.is_self:
+            continue
         postID = post.id
         # if in posts SQL table already, do nothing
         cursor = db.cursor()
