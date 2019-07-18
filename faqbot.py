@@ -57,7 +57,6 @@ def find_keywords(postText): # TODO
     return
     
 def retrieve_token_counts(submissions, db):
-    i = 0
     for post in submissions:
         if not post.is_self:
             continue
@@ -72,7 +71,6 @@ def retrieve_token_counts(submissions, db):
             continue
         #print(postID)
         cursor.close()
-        i = i + 1
         # get post text data
         postTitle = post.title
         postText = post.selftext
@@ -137,8 +135,6 @@ def retrieve_token_counts(submissions, db):
             cursor.execute(add_to_keywords, { 'tid': new_token_id, 'pid': postID, 'count': count })
             db.commit()
             cursor.close()
-        if i >= 5:
-            raise Exception('finished five document')
     return
 
 def initial_data_load(subreddit, db, fromCrash):
