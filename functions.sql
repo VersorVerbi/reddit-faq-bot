@@ -5,16 +5,15 @@ BEGIN
   DECLARE keyword_cursor CURSOR FOR SELECT keywords.tokenId FROM keywords WHERE keywords.postId = postQid;
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
   OPEN keyword_cursor;
+  CREATE TEMPORARY TABLE IF NOT EXISTS document_keywords (tokenID int, tfIdf float);
   check_keywords: LOOP
     FETCH keyword_cursor INTO keyword;
     IF finished = 1 THEN LEAVE check_keywords; END IF;
     SET @tf_idf = tfIdfScore(keyword, postQid);
-    IF @tf_idf > 5 THEN
-      SELECT tokens.token FROM tokens WHERE tokens.id = keyword LIMIT 1 INTO @str;
-      SET @output = CONCAT(@output,";",@str);
-    END IF;
+    INSERT INTO document_keywords VALUES (keyword, @tf_idf);
   END LOOP check_keywords;
   CLOSE keyword_cursor;
+  SELECT GROUP_CONCAT(token SEPARATOR ', ') INTO @output FROM (SELECT tokens.token,document_keywords.tfIdf FROM tokens INNER JOIN document_keywords ON tokens.id = document_keywords.tokenID ORDER BY document_keywords.tfIdf DESC LIMIT 5) as s1;
   RETURN @output;
 END
 
@@ -28,7 +27,7 @@ RETURN
     *
     (LOG10(
         (SELECT COUNT(*) FROM posts)
-        *
+        /
         (SELECT tokens.document_count
             FROM tokens
             WHERE tokens.id = tokenQid
