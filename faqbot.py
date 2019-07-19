@@ -32,8 +32,8 @@ ADMIN_DESCRIPTIONS = {
     'HELP': 'Return a list of functions, options, and behavior for admins.',
     'MODFAVE id': 'Where `id` is the string immediately after `/comments/` in the URL of a thread, e.g., `cdgbpv`. Use this command to mark a particular thread as a moderator favorite. It will be set apart and highlighted whenever it scores highly in keyword matching. The quoted top comment will come from the most closely matched mod favorite thread instead of being pulled from all possible matches.'
     'MODUNFAVE id': 'Where `id` is the string immediately after `/comments/` in the URL of a thread, e.g., `cdgbpv`. Use this command to **un**mark a particular thread as a moderator favorite. It will **no longer** be set apart and highlighted, but will appear normally whenever it scores highly in keyword matching. The quoted top comment will come from the most closely matched mod favorite thread instead of being pulled from all possible matches.',
-    'NUMKEYS #': 'Where `#` is an integer less than ten (<10). Indicates the number of keywords to use for thread matching. The default is 5.',
-    'NUMLINKS #': 'Where `#` is an integer less than ten (<10). Indicates the maximum number of matching links to provide when responding to new posts.',
+    'NUMKEYS #': 'Where `#` is a positive integer less than or equal to ten (<=10). Indicates the number of keywords to use for thread matching. The default is 5.',
+    'NUMLINKS #': 'Where `#` is a positive integer less than or equal to ten (<=10). Indicates the maximum number of matching links to provide when responding to new posts.',
     'QUERY': 'Where `QUERY` is the subject and your query is the body of the message; works exactly like non-administrative users querying the bot.',
     'REDUCEUNIQUENESS word': 'Where `word` is the word/token you want to reduce the influence of. This is appropriate only for obvious misspellings or otherwise rare (but irrelevant) words that, due to their uniqueness, score as keywords more often than they should. **THIS ACTION CANNOT BE REVERSED. PROCEED WITH CAUTION.**'
     }
@@ -57,6 +57,57 @@ def post_is_processed(postID, db):
     cursor.close()
     return is_processed
 
+def admin_signature():
+    output = '\n\nThank you for using the ' + constants.BOT_NAME + '!\n\n------\n\n'
+    output += 'Remember that you can reply to this message,'
+    output += ' or send a new private message to this bot, in order to make adjustments to how'
+    output += ' it operates. Send a single command per message. (Every message will be interpeted'
+    output += ' based on the first command parsed only.)\n\nEach of these commands is case-'
+    output += 'insensitive:\n\n'
+    for cmd,desc in ADMIN_DESCRIPTIONS.items():
+        output += '* `' + cmd + '`: ' + desc + '\n'
+    output += '\nPlease send a message to /u/' + constants.ADMIN_USER + ' with questions, comments, or bug reports.'
+    return output
+
+def user_signature(is_public=False):
+    output = '\n\n------\n\n'
+    output += '^^I ^^am ^^only ^^trying ^^to ^^help'
+    if is_public:
+        output += '; ^^if ^^I ^^have ^^failed, ^^the ^^original ^^recipient ^^of ^^this ^^response ^^or ^^a '
+        output += '^^subreddit ^^moderator ^^should ^^reply ^^to ^^this ^^comment ^^with ^^precisely ^^`delete`. '
+    else:
+        output += '. '
+    output += '^^If ^^you ^^want ^^my ^^input ^^in ^^a ^^thread, '
+    output += '^^tag ^^/u/' + constants.REDDIT_USER + ' ^^with ^^a ^^query ^^or ^^question. ^^Alternatively, '
+    output += '^^include ^^**no** ^^other ^^text ^^and ^^tag ^^me ^^to ^^get ^^my ^^response ^^based ^^on '
+    output += '^^the ^^parent ^^comment ^^or ^^post. ^^If ^^you ^^have ^^a ^^private ^^question, ^^always '
+    output += '^^feel ^^free ^^to ^^send ^^a ^^message ^^to ^^me ^^with ^^your ^^short ^^query.\n\n^^Please '
+    output += '^^send ^^a ^^message ^^to ^^/u/' + constants.ADMIN_USER + ' ^^with ^^questions, ^^comments, '
+    output += '^^or ^^bug ^^reports.'
+    return output
+
+def invalid_command(cmd):
+    output = 'You have attempted to send me a command, but I didn\'t recognize it. The command you entered was `' + cmd
+    output += '`.\n\nIf you\'re trying to query me like a "regular" user, remember that you must (1) start a **new** '
+    output += 'private message conversation, (2) make the subject `QUERY` (case-insensitive, but just that alone), and '
+    output += '(3) make the body of the message your query.'
+    return output
+
+def invalid_params():
+    return 'You have entered invalid parameters for your command (alpha instead of numeric, for example). Don\'t do that.'
+
+def improper_params(cmd):
+    if 'MOD' in cmd.upper():
+        output = 'You have attempted to favorite or unfavorite a thread, but one of the following '
+        output += 'was true:\n\n*the indicated id did not exist,\n*the thread was not on r/'
+        output += constants.SUBREDDIT + ', or\n*the specified thread was already on (or off) the '
+        output += 'favorites list. Please try again with an appropriate thread.'
+    else:
+        output = 'You have attempted to change a number setting, but have supplied a negative '
+        output += 'number or one greater than 10 (>10). Please try again with an appropriate '
+        output += 'number.'
+    return output
+
 def process_post(post):
     global db
     postID = post.id
@@ -71,6 +122,20 @@ def process_post(post):
     releventPosts = relevant_posts(postKeywords)
     # TODO: do other stuff, like add a comment with links and a quote
     # TODO: mark the post as processed
+    return
+
+def process_comment(cmt):
+    global subr
+    global r
+    if 'u/' + constants.REDDIT_USER.lower() not in cmt.body.lower():
+        if cmt.parent().author == r.redditor(constants.REDDIT_USER):
+            for mod in subr.moderator():
+                VALID_ADMINS.append(str(mod))
+            if cmt.author == cmt.parent().parent().author or cmt.author in VALID_ADMINS:
+                if cmt.body.lower() == 'delete':
+                    cmt.parent().delete()
+    else: # we have been summoned
+        #TODO: handle a comment
     return
 
 def relevant_posts(keywords): # TODO
@@ -211,8 +276,9 @@ def get_stream():
     target_sub = r.subreddit(constants.SUBREDDIT)
     results = []
     results.extend(subreddit.new(**kwargs))
-    results.extend(subreddit.comments(**kwargs))
-    results.extend(r.inbox.all())
+    results.extend(r.inbox.messages())
+    results.extend(r.inbox.comment_replies())
+    results.extend(r.inbox.mentions())
     results.sort(key=lambda post: post.created_utc, reverse=True)
     return praw.models.util.stream_generator(lambda **kwargs: results, **kwargs))
 
@@ -228,22 +294,22 @@ def handle_command_message(msg):
         if msg.subject.split()[0].upper() == 'HELP':
             reply_message = user_help() #TODO: user_help
         else:
-            reply_message = handle_query(msg.subject + ' ' + msg.body) + user_signature() #TODO: handle_query, user_signature
+            reply_message = handle_query(msg.subject + ' ' + msg.body) + user_signature(False)
     else:
         cmd = msg.subject.split()
-        if cmd[0] == 'QUERY':
-            reply_message = handle_query(msg.body) + admin_signature() #TODO: admin_signature
+        if cmd[0].upper() == 'QUERY':
+            reply_message = handle_query(msg.body) + admin_signature()
         elif cmd[0].upper() not in ADMIN_COMMANDS:
             cmd = msg.body.split()
         if cmd[0].upper() not in ADMIN_COMMANDS:
-            reply_message = invalid_command(cmd[0]) + admin_signature() #TODO: invalid_command
+            reply_message = invalid_command(cmd[0]) + admin_signature()
         else:
             codeToExec = 'global cmd_result; cmd_result = ' + switch(ADMIN_COMMANDS, '-1', cmd[0])
             exec(codeToExec, globals(), locals())
             if cmd_result < 0:
-                reply_message = invalid_params() + admin_signature() #TODO: invalid_params
+                reply_message = invalid_params() + admin_signature()
             elif cmd_result > 0:
-                reply_message = improper_params(cmd[0]) + admin_signature() #TODO: improper_params
+                reply_message = improper_params(cmd[0]) + admin_signature()
             else:
                 codeToExec = 'global reply_message; reply_message = ' + switch(ADMIN_REPLIES, '-1', cmd[0])
                 exec(codeToExec, globals(), locals())
@@ -256,7 +322,7 @@ def handle_command_message(msg):
 r = praw.Reddit(user_agent=constants.USER_AGENT, client_id=constants.CLIENT_ID, client_secret=constants.CLIENT_SECRET, username=constants.REDDIT_USER, password=constants.REDDIT_PW)
 db = mysql.connector.connect(user=constants.SQL_USER, password=constants.SQL_PW, host='localhost', database=constants.SQL_DATABASE)
 if len(sys.argv) > 1:
-	fromCrash = (sys.argv[1] == 'initial')
+	fromCrash = (sys.argv[1] != 'initial')
 else:
 	fromCrash = True
 
@@ -273,6 +339,9 @@ try:
                 process_post(caller)
             else:
                 process_comment(caller)
+            if len(VALID_ADMINS) > 1:
+                VALID_ADMINS.clear()
+                VALID_ADMINS.append(constants.ADMIN_USER)
 except Exception as e:
     db.close()
     err_data = sys.enc_info()
