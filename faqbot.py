@@ -3,51 +3,56 @@ import mysql.connector
 import re
 import sys
 import traceback
-from config import constants
+from config import constants as config
 
+#region enums
 ADMIN_COMMANDS = {
-    'DATA': '',
-    'HELP': '',
-    'MODFAVE': '',
-    'MODUNFAVE': '',
-    'NUMKEYS': '',
-    'NUMLINKS': '',
-    'QUERY': '',
-    'REDUCEUNIQUENESS': ''
+    'DATA': 'command_ok()',
+    'HELP': 'command_ok()',
+    'MODFAVE': 'add_favorite(cmd[1])',
+    'MODUNFAVE': 'remove_favorite(cmd[1])',
+    'NUMKEYS': 'update_numkeys(cmd[1])',
+    'NUMLINKS': 'update_numlinks(cmd[1])',
+    'QUERY': 'process_query(msg)',
+    'REDUCEUNIQUENESS': 'ignore_token(cmd[1])'
     }
 
 ADMIN_REPLIES = {
-    'DATA': '',
-    'HELP': '',
-    'MODFAVE': '',
-    'MODUNFAVE': '',
-    'NUMKEYS': '',
-    'NUMLINKS': '',
-    'QUERY': '',
-    'REDUCEUNIQUENESS': ''
+    'DATA': 'quick_analytics()',
+    'HELP': 'help_text()',
+    'MODFAVE': 'favorite_added(cmd[1])',
+    'MODUNFAVE': 'favorite_removed(cmd[1])',
+    'NUMKEYS': 'new_numkeys(cmd[1])',
+    'NUMLINKS': 'new_numlinks(cmd[1])',
+    'QUERY': 'query_results()',
+    'REDUCEUNIQUENESS': 'token_ignored(cmd[1])'
     }
 
 ADMIN_DESCRIPTIONS = {
     'DATA': 'Return a high-level summary of the database and settings as they are now.',
     'HELP': 'Return a list of functions, options, and behavior for admins.',
-    'MODFAVE id': 'Where `id` is the string immediately after `/comments/` in the URL of a thread, e.g., `cdgbpv`. Use this command to mark a particular thread as a moderator favorite. It will be set apart and highlighted whenever it scores highly in keyword matching. The quoted top comment will come from the most closely matched mod favorite thread instead of being pulled from all possible matches.'
+    'MODFAVE id': 'Where `id` is the string immediately after `/comments/` in the URL of a thread, e.g., `cdgbpv`. Use this command to mark a particular thread as a moderator favorite. It will be set apart and highlighted whenever it scores highly in keyword matching. The quoted top comment will come from the most closely matched mod favorite thread instead of being pulled from all possible matches.',
     'MODUNFAVE id': 'Where `id` is the string immediately after `/comments/` in the URL of a thread, e.g., `cdgbpv`. Use this command to **un**mark a particular thread as a moderator favorite. It will **no longer** be set apart and highlighted, but will appear normally whenever it scores highly in keyword matching. The quoted top comment will come from the most closely matched mod favorite thread instead of being pulled from all possible matches.',
     'NUMKEYS #': 'Where `#` is a positive integer less than or equal to ten (<=10). Indicates the number of keywords to use for thread matching. The default is 5.',
     'NUMLINKS #': 'Where `#` is a positive integer less than or equal to ten (<=10). Indicates the maximum number of matching links to provide when responding to new posts.',
     'QUERY': 'Where `QUERY` is the subject and your query is the body of the message; works exactly like non-administrative users querying the bot.',
     'REDUCEUNIQUENESS word': 'Where `word` is the word/token you want to reduce the influence of. This is appropriate only for obvious misspellings or otherwise rare (but irrelevant) words that, due to their uniqueness, score as keywords more often than they should. **THIS ACTION CANNOT BE REVERSED. PROCEED WITH CAUTION.**'
     }
+#endregion
 
-VALID_ADMINS = [constants.ADMIN_USER]
-
+VALID_ADMINS = [config.ADMIN_USER]
 reply_message = ''
 cmd_result = 0
 
+#region basic functions
 def switch(dictionary, default, value):
     return dictionary.get(value, default)
     
 def remove_nonalpha(matchobj):
     return ''
+
+def command_ok():
+    return 0
 
 def post_is_processed(postID, db):
     cursor = db.cursor()
@@ -56,9 +61,43 @@ def post_is_processed(postID, db):
     is_processed = cursor.fetchone().isKwProcessed > 0
     cursor.close()
     return is_processed
+#endregion
 
+#region command functions
+def add_favorite(new_favorite):
+    global db
+    if new_favorite is None:
+        return -1
+
+    sql = 'UPDATE posts SET posts.modFavorite = 1 WHERE posts.id = %(pid)s'
+    cursor = db.cursor()
+    cursor.execute(sql, {'pid': new_favorite})
+    return 0
+
+
+def remove_favorite(fav_to_remove):
+    return 0
+
+
+def update_numkeys(new_numkeys):
+    return 0
+
+
+def update_numlinks(new_numlinks):
+    return 0
+
+
+def process_query(message):
+    return 0
+
+
+def ignore_token(token):
+    return 0
+#endregion
+
+#region reply functions
 def admin_signature():
-    output = '\n\nThank you for using the ' + constants.BOT_NAME + '!\n\n------\n\n'
+    output = '\n\nThank you for using the ' + config.BOT_NAME + '!\n\n------\n\n'
     output += 'Remember that you can reply to this message,'
     output += ' or send a new private message to this bot, in order to make adjustments to how'
     output += ' it operates. Send a single command per message. (Every message will be interpeted'
@@ -66,7 +105,7 @@ def admin_signature():
     output += 'insensitive:\n\n'
     for cmd,desc in ADMIN_DESCRIPTIONS.items():
         output += '* `' + cmd + '`: ' + desc + '\n'
-    output += '\nPlease send a message to /u/' + constants.ADMIN_USER + ' with questions, comments, or bug reports.'
+    output += '\nPlease send a message to /u/' + config.ADMIN_USER + ' with questions, comments, or bug reports.'
     return output
 
 def user_signature(is_public=False):
@@ -78,11 +117,11 @@ def user_signature(is_public=False):
     else:
         output += '. '
     output += '^^If ^^you ^^want ^^my ^^input ^^in ^^a ^^thread, '
-    output += '^^tag ^^/u/' + constants.REDDIT_USER + ' ^^with ^^a ^^query ^^or ^^question. ^^Alternatively, '
+    output += '^^tag ^^/u/' + config.REDDIT_USER + ' ^^with ^^a ^^query ^^or ^^question. ^^Alternatively, '
     output += '^^include ^^**no** ^^other ^^text ^^and ^^tag ^^me ^^to ^^get ^^my ^^response ^^based ^^on '
     output += '^^the ^^parent ^^comment ^^or ^^post. ^^If ^^you ^^have ^^a ^^private ^^question, ^^always '
     output += '^^feel ^^free ^^to ^^send ^^a ^^message ^^to ^^me ^^with ^^your ^^short ^^query.\n\n^^Please '
-    output += '^^send ^^a ^^message ^^to ^^/u/' + constants.ADMIN_USER + ' ^^with ^^questions, ^^comments, '
+    output += '^^send ^^a ^^message ^^to ^^/u/' + config.ADMIN_USER + ' ^^with ^^questions, ^^comments, '
     output += '^^or ^^bug ^^reports.'
     return output
 
@@ -100,7 +139,7 @@ def improper_params(cmd):
     if 'MOD' in cmd.upper():
         output = 'You have attempted to favorite or unfavorite a thread, but one of the following '
         output += 'was true:\n\n*the indicated id did not exist,\n*the thread was not on r/'
-        output += constants.SUBREDDIT + ', or\n*the specified thread was already on (or off) the '
+        output += config.SUBREDDIT + ', or\n*the specified thread was already on (or off) the '
         output += 'favorites list. Please try again with an appropriate thread.'
     else:
         output = 'You have attempted to change a number setting, but have supplied a negative '
@@ -108,58 +147,66 @@ def improper_params(cmd):
         output += 'number.'
     return output
 
+def quick_analytics():
+    global db
+    return message
+
+def help_text():
+    return message
+
+def favorite_added(new_favorite):
+    return message
+
+def favorite_removed(fav_to_remove):
+    return message
+
+def new_numkeys(numkeys):
+    return message
+
+def new_numlinks(numlinks):
+    return message
+
+def query_results():
+    return message
+
+def token_ignored(token):
+    return message
+#endregion
+
+
+#region analysis functions
 def process_post(post):
     global db
-    postID = post.id
-    
+    post_id = post.id
+
     # if already processed, quit
-    if post_is_processed(postID, db):
+    if post_is_processed(post_id, db):
         return
-    
+
     # TODO: decide whether we want to deal with link posts at all
-    postText = post.title + chr(7) + post.selftext
-    postKeywords = find_keywords(postText)
-    releventPosts = relevant_posts(postKeywords)
+    post_text = post.title + chr(7) + post.selftext
+    post_keywords = find_keywords(post_text)
+    relevent_posts = relevant_posts(post_keywords)
     # TODO: do other stuff, like add a comment with links and a quote
     # TODO: mark the post as processed
     return
 
+
 def process_comment(cmt):
     global subr
     global r
-    if 'u/' + constants.REDDIT_USER.lower() not in cmt.body.lower():
-        if cmt.parent().author == r.redditor(constants.REDDIT_USER):
+    if 'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():
+        if cmt.parent().author == r.redditor(config.REDDIT_USER):
             for mod in subr.moderator():
                 VALID_ADMINS.append(str(mod))
             if cmt.author == cmt.parent().parent().author or cmt.author in VALID_ADMINS:
                 if cmt.body.lower() == 'delete':
                     cmt.parent().delete()
-    else: # we have been summoned
-        #TODO: handle a comment
+    else:  # we have been summoned
+        pass  # TODO: handle a comment
     return
 
-def relevant_posts(keywords): # TODO
-    # with all keywords do SQL:
-    #SELECT postId,COUNT(*) as sameKeywords
-    #FROM `tfIdfTable`
-    #WHERE tokenId in (keywords)
-    #AND tfIdfScore > KEYWORD_THRESHOLD
-    #GROUP BY postId
-    #ORDER BY sameKeywords DESC
-    # return list where sameKeywords > 25%? of number of keywords
-    return
 
-def find_keywords(postText): # TODO
-    # split by chr(7); if nothing after, use query calculation; otherwise, just remove chr(7) and pretend all are together
-    # split text, reduce to lower-case alpha-numeric only
-    # count instances (get tf)
-    # loop through unique
-    #get idf
-    #calculate_tfidf
-    #sort by score
-    # top scorers = keywords (top 5 or all >keyword threshold, whichever is more, along with scores)
-    return
-    
 def retrieve_token_counts(submissions, db):
     for post in submissions:
         if not post.is_self:
@@ -240,11 +287,38 @@ def retrieve_token_counts(submissions, db):
             db.commit()
             cursor.close()
     return
+#endregion
 
-def initial_data_load(subreddit, db, fromCrash):
+def relevant_posts(keywords): # TODO
+    # with all keywords do SQL:
+    #SELECT postId,COUNT(*) as sameKeywords
+    #FROM `tfIdfTable`
+    #WHERE tokenId in (keywords)
+    #AND tfIdfScore > KEYWORD_THRESHOLD
+    #GROUP BY postId
+    #ORDER BY sameKeywords DESC
+    # return list where sameKeywords > 25%? of number of keywords
+    return ''
+
+def find_keywords(postText): # TODO
+    # split by chr(7); if nothing after, use query calculation; otherwise, just remove chr(7) and pretend all are together
+    # split text, reduce to lower-case alpha-numeric only
+    # count instances (get tf)
+    # loop through unique
+    #get idf
+    #calculate_tfidf
+    #sort by score
+    # top scorers = keywords (top 5 or all >keyword threshold, whichever is more, along with scores)
+    return ''
+
+
+#region retrieval functions
+def initial_data_load(subreddit):
     # Reddit limits the results of each of these calls to 1000 posts; there will undoubtedly be some overlap between these,
     # but by using all of them, we're likely to get a larger number of total posts for analysis (although, unfortunately, only
     # a very small number of the total submissions on the subreddit)
+    global db
+    global fromCrash
     submissions = []
     if not fromCrash:
         #top
@@ -273,14 +347,15 @@ def initial_data_load(subreddit, db, fromCrash):
 
 def get_stream():
     global r
-    target_sub = r.subreddit(constants.SUBREDDIT)
+    target_sub = r.subreddit(config.SUBREDDIT)
     results = []
-    results.extend(subreddit.new(**kwargs))
+    results.extend(target_sub.new(**kwargs))
     results.extend(r.inbox.messages())
     results.extend(r.inbox.comment_replies())
     results.extend(r.inbox.mentions())
     results.sort(key=lambda post: post.created_utc, reverse=True)
-    return praw.models.util.stream_generator(lambda **kwargs: results, **kwargs))
+    return praw.models.util.stream_generator(lambda **kwargs: results, **kwargs)
+#endregion
 
 def handle_command_message(msg):
     global r
@@ -304,31 +379,31 @@ def handle_command_message(msg):
         if cmd[0].upper() not in ADMIN_COMMANDS:
             reply_message = invalid_command(cmd[0]) + admin_signature()
         else:
-            codeToExec = 'global cmd_result; cmd_result = ' + switch(ADMIN_COMMANDS, '-1', cmd[0])
-            exec(codeToExec, globals(), locals())
+            code_to_exec = 'global cmd_result; cmd_result = ' + switch(ADMIN_COMMANDS, '-1', cmd[0])
+            exec(code_to_exec, globals(), locals())
             if cmd_result < 0:
                 reply_message = invalid_params() + admin_signature()
             elif cmd_result > 0:
                 reply_message = improper_params(cmd[0]) + admin_signature()
             else:
-                codeToExec = 'global reply_message; reply_message = ' + switch(ADMIN_REPLIES, '-1', cmd[0])
-                exec(codeToExec, globals(), locals())
+                code_to_exec = 'global reply_message; reply_message = ' + switch(ADMIN_REPLIES, '-1', cmd[0])
+                exec(code_to_exec, globals(), locals())
                 reply_message += admin_signature()
     msg.reply(reply_message)
     msg.delete()
     return
 
 #main -----------------------------------
-r = praw.Reddit(user_agent=constants.USER_AGENT, client_id=constants.CLIENT_ID, client_secret=constants.CLIENT_SECRET, username=constants.REDDIT_USER, password=constants.REDDIT_PW)
-db = mysql.connector.connect(user=constants.SQL_USER, password=constants.SQL_PW, host='localhost', database=constants.SQL_DATABASE)
+r = praw.Reddit(user_agent=config.USER_AGENT, client_id=config.CLIENT_ID, client_secret=config.CLIENT_SECRET, username=config.REDDIT_USER, password=config.REDDIT_PW)
+db = mysql.connector.connect(user=config.SQL_USER, password=config.SQL_PW, host='localhost', database=config.SQL_DATABASE)
 if len(sys.argv) > 1:
-	fromCrash = (sys.argv[1] != 'initial')
+    fromCrash = (sys.argv[1] != 'initial')
 else:
-	fromCrash = True
+    fromCrash = True
 
 try:
-    subr = r.subreddit(constants.SUBREDDIT)
-    initial_data_load(subr, db, fromCrash)
+    subr = r.subreddit(config.SUBREDDIT)
+    initial_data_load(subr)
     raise Exception('quit before "constant" loop')
     while True:
         callers = get_stream()
@@ -341,7 +416,7 @@ try:
                 process_comment(caller)
             if len(VALID_ADMINS) > 1:
                 VALID_ADMINS.clear()
-                VALID_ADMINS.append(constants.ADMIN_USER)
+                VALID_ADMINS.append(config.ADMIN_USER)
 except Exception as e:
     db.close()
     err_data = sys.enc_info()
@@ -349,4 +424,4 @@ except Exception as e:
     traces = traceback.format_list(traceback.extract_tb(err_data[2]))
     for trace in traces:
         err_msg += '    ' + trace + '\n' # stack trace
-    r.redditor(constants.ADMIN_USER).message('FAQ CRASH',err_msg)
+    r.redditor(config.ADMIN_USER).message('FAQ CRASH',err_msg)

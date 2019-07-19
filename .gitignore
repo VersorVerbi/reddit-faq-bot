@@ -105,3 +105,8 @@ venv.bak/
 
 # config files
 config/constants.py
+.idea/misc.xml
+.idea/modules.xml
+.idea/reddit-faq-bot.iml
+.idea/vcs.xml
+.idea/workspace.xml
