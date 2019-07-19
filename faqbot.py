@@ -2,8 +2,50 @@ import praw
 import mysql.connector
 import re
 import sys
+import traceback
 from config import constants
 
+ADMIN_COMMANDS = {
+    'DATA': '',
+    'HELP': '',
+    'MODFAVE': '',
+    'MODUNFAVE': '',
+    'NUMKEYS': '',
+    'NUMLINKS': '',
+    'QUERY': '',
+    'REDUCEUNIQUENESS': ''
+    }
+
+ADMIN_REPLIES = {
+    'DATA': '',
+    'HELP': '',
+    'MODFAVE': '',
+    'MODUNFAVE': '',
+    'NUMKEYS': '',
+    'NUMLINKS': '',
+    'QUERY': '',
+    'REDUCEUNIQUENESS': ''
+    }
+
+ADMIN_DESCRIPTIONS = {
+    'DATA': 'Return a high-level summary of the database and settings as they are now.',
+    'HELP': 'Return a list of functions, options, and behavior for admins.',
+    'MODFAVE id': 'Where `id` is the string immediately after `/comments/` in the URL of a thread, e.g., `cdgbpv`. Use this command to mark a particular thread as a moderator favorite. It will be set apart and highlighted whenever it scores highly in keyword matching. The quoted top comment will come from the most closely matched mod favorite thread instead of being pulled from all possible matches.'
+    'MODUNFAVE id': 'Where `id` is the string immediately after `/comments/` in the URL of a thread, e.g., `cdgbpv`. Use this command to **un**mark a particular thread as a moderator favorite. It will **no longer** be set apart and highlighted, but will appear normally whenever it scores highly in keyword matching. The quoted top comment will come from the most closely matched mod favorite thread instead of being pulled from all possible matches.',
+    'NUMKEYS #': 'Where `#` is an integer less than ten (<10). Indicates the number of keywords to use for thread matching. The default is 5.',
+    'NUMLINKS #': 'Where `#` is an integer less than ten (<10). Indicates the maximum number of matching links to provide when responding to new posts.',
+    'QUERY': 'Where `QUERY` is the subject and your query is the body of the message; works exactly like non-administrative users querying the bot.',
+    'REDUCEUNIQUENESS word': 'Where `word` is the word/token you want to reduce the influence of. This is appropriate only for obvious misspellings or otherwise rare (but irrelevant) words that, due to their uniqueness, score as keywords more often than they should. **THIS ACTION CANNOT BE REVERSED. PROCEED WITH CAUTION.**'
+    }
+
+VALID_ADMINS = [constants.ADMIN_USER]
+
+reply_message = ''
+cmd_result = 0
+
+def switch(dictionary, default, value):
+    return dictionary.get(value, default)
+    
 def remove_nonalpha(matchobj):
     return ''
 
@@ -15,7 +57,8 @@ def post_is_processed(postID, db):
     cursor.close()
     return is_processed
 
-def process_post(post, db, initialLoad):
+def process_post(post):
+    global db
     postID = post.id
     
     # if already processed, quit
@@ -25,10 +68,6 @@ def process_post(post, db, initialLoad):
     # TODO: decide whether we want to deal with link posts at all
     postText = post.title + chr(7) + post.selftext
     postKeywords = find_keywords(postText)
-    if initialLoad:
-        # TODO: just put the scores in the SQL database
-        # TODO: mark the post as processed
-        return
     releventPosts = relevant_posts(postKeywords)
     # TODO: do other stuff, like add a comment with links and a quote
     # TODO: mark the post as processed
@@ -167,6 +206,51 @@ def initial_data_load(subreddit, db, fromCrash):
         retrieve_token_counts(postList, db)
     return
 
+def get_stream():
+    global r
+    target_sub = r.subreddit(constants.SUBREDDIT)
+    results = []
+    results.extend(subreddit.new(**kwargs))
+    results.extend(subreddit.comments(**kwargs))
+    results.extend(r.inbox.all())
+    results.sort(key=lambda post: post.created_utc, reverse=True)
+    return praw.models.util.stream_generator(lambda **kwargs: results, **kwargs))
+
+def handle_command_message(msg):
+    global r
+    global db
+    global subr
+    global cmd_result
+    global reply_message
+    for mod in subr.moderator():
+        VALID_ADMINS.append(str(mod))
+    if msg.author not in VALID_ADMINS:
+        if msg.subject.split()[0].upper() == 'HELP':
+            reply_message = user_help() #TODO: user_help
+        else:
+            reply_message = handle_query(msg.subject + ' ' + msg.body) + user_signature() #TODO: handle_query, user_signature
+    else:
+        cmd = msg.subject.split()
+        if cmd[0] == 'QUERY':
+            reply_message = handle_query(msg.body) + admin_signature() #TODO: admin_signature
+        elif cmd[0].upper() not in ADMIN_COMMANDS:
+            cmd = msg.body.split()
+        if cmd[0].upper() not in ADMIN_COMMANDS:
+            reply_message = invalid_command(cmd[0]) + admin_signature() #TODO: invalid_command
+        else:
+            codeToExec = 'global cmd_result; cmd_result = ' + switch(ADMIN_COMMANDS, '-1', cmd[0])
+            exec(codeToExec, globals(), locals())
+            if cmd_result < 0:
+                reply_message = invalid_params() + admin_signature() #TODO: invalid_params
+            elif cmd_result > 0:
+                reply_message = improper_params(cmd[0]) + admin_signature() #TODO: improper_params
+            else:
+                codeToExec = 'global reply_message; reply_message = ' + switch(ADMIN_REPLIES, '-1', cmd[0])
+                exec(codeToExec, globals(), locals())
+                reply_message += admin_signature()
+    msg.reply(reply_message)
+    msg.delete()
+    return
 
 #main -----------------------------------
 r = praw.Reddit(user_agent=constants.USER_AGENT, client_id=constants.CLIENT_ID, client_secret=constants.CLIENT_SECRET, username=constants.REDDIT_USER, password=constants.REDDIT_PW)
@@ -177,14 +261,23 @@ else:
 	fromCrash = True
 
 try:
-    subr = r.subreddit(constants.SUBREDDIT_NAME)
-    initial_data_load(subr, db, False)
+    subr = r.subreddit(constants.SUBREDDIT)
+    initial_data_load(subr, db, fromCrash)
     raise Exception('quit before "constant" loop')
     while True:
-        callers = subr.stream.submissions()
+        callers = get_stream()
         for caller in callers:
-            process_post(caller, db, fromCrash)
+            if isinstance(caller, praw.models.Message):
+                handle_command_message(caller)
+            elif isinstance(caller, praw.models.Submission):
+                process_post(caller)
+            else:
+                process_comment(caller)
 except Exception as e:
     db.close()
-    print(e)
-    # other closing stuff? log the error?
+    err_data = sys.enc_info()
+    err_msg = str(err_data[1]) + '\n\n' # error message
+    traces = traceback.format_list(traceback.extract_tb(err_data[2]))
+    for trace in traces:
+        err_msg += '    ' + trace + '\n' # stack trace
+    r.redditor(constants.ADMIN_USER).message('FAQ CRASH',err_msg)
