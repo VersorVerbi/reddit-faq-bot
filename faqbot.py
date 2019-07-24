@@ -3,6 +3,7 @@ import mysql.connector
 import re
 import sys
 import traceback
+from nltk import corpus
 from config import constants as config
 
 
@@ -59,6 +60,7 @@ ADMIN_DESCRIPTIONS = {
 VALID_ADMINS = [config.ADMIN_USER]
 reply_message = ''
 cmd_result = 0
+replacement = None
 # endregion
 
 
@@ -68,7 +70,8 @@ def switch(dictionary, default, value):
 
 
 def remove_nonalpha(matchobj):
-    return ''
+    global replacement
+    return replacement
 
 
 def command_ok():
@@ -220,18 +223,33 @@ def token_ignored(token):
 
 
 # region analysis functions
+def related_posts(post_id):  # TODO
+    # SELECT DISTINCT keywords.postID FROM keywords WHERE keywords.tokenID IN (tokenList(post_id))
+    # with all keywords do SQL:
+    # SELECT postId,COUNT(*) as sameKeywords
+    # FROM `tfIdfTable`
+    # WHERE tokenId in (keywords)
+    # AND tfIdfScore > KEYWORD_THRESHOLD
+    # GROUP BY postId
+    # ORDER BY sameKeywords DESC
+    # return list where sameKeywords > 25%? of number of keywords
+    return ''
+
+
 def process_post(post):
     global db
     post_id = post.id
+
+    if post.link_flair_text.lower() in config.FLAIRS_TO_IGNORE or post.stickied or not post.is_self:
+        # don't reply to mod posts or specified flaired posts or non-self-text posts
+        return
 
     # if already processed, quit
     if post_is_processed(post_id):
         return
 
-    # TODO: decide whether we want to deal with link posts at all
-    post_text = post.title + chr(7) + post.selftext
-    post_keywords = find_keywords(post_text)
-    relevent_posts = relevant_posts(post_keywords)
+    token_counting(post)
+    list_of_related_posts = related_posts(post_id)
     # TODO: do other stuff, like add a comment with links and a quote
     # TODO: mark the post as processed
     return
@@ -255,7 +273,8 @@ def process_comment(cmt):
 def retrieve_token_counts(submissions):
     global db
     for post in submissions:
-        if not post.is_self:
+        # "gilded" returns both comments and submissions, so exclude the comments
+        if not isinstance(post, praw.models.Submission) or not post.is_self:
             continue
         post_id = post.id
         # if in posts SQL table already, do nothing
@@ -266,100 +285,111 @@ def retrieve_token_counts(submissions):
         if cursor.rowcount > 0:
             cursor.close()
             continue
-        # print(post_id)
         cursor.close()
-        # get post text data
-        post_title = post.title
-        post_text = post.selftext
-        # split strings, reduce to alpha-numeric only, get counts
-        replace_pattern = r'[^a-zà-öø-ÿ ]'  # get rid of non-alpha, non-space characters
-        post_text = re.sub(replace_pattern, remove_nonalpha, post_text.lower())
-        post_title = re.sub(replace_pattern, remove_nonalpha, post_title.lower())
-        # note to self: potential bug with special-char-concatenated words (don't, super-heated, etc.)
-        text_array = post_title.split() + post_text.split()
-        text_set = set(text_array)
-        # add post_id to posts SQL table (have to do this first so foreign keys in other SQL tables don't complain)
-        cursor = db.cursor()
-        add_to_posts = "INSERT INTO posts (id) VALUES (%(pid)s)"
-        cursor.execute(add_to_posts, {'pid': post_id})
-        db.commit()
-        cursor.close()
-        # loop through tokens and add them to the database
-        for token in text_set:
-            # print(' ' + token)
-            new_token_id = 0
-            count = text_array.count(token)
-            # add counts to SQL database (use Jaccard scoring to determine "source" keyword, or add new ?)
-            cursor = db.cursor()
-            get_token = "SELECT tokens.id FROM tokens WHERE tokens.token LIKE %(wrd)s"
-            cursor.execute(get_token, {'wrd': token})
-            row = cursor.fetchone()
-            # check for match
-            # print ('  ',cursor.rowcount)
-            if cursor.rowcount <= 0:
-                # if no match, get closestMatch()
-                matched_token_set = cursor.callproc('closestMatch', (token, (0, 'CHAR'), 0, 0))
-                matched_token = matched_token_set[1]
-                matched_id = matched_token_set[2]
-                matched_proximity = matched_token_set[3]
-                # if match is insufficient, add it to the token table
-                token_length = len(token)
-                # if length <= 3, only 100% is sufficient (won't this still cause bugs -- e.g., fig vs gif?)
-                # as length increases, required match decreases (+1/-5?)
-                required_match = max(1 - (0.05 * (token_length - 3)), 0.6)
-                # print(matched_token_set)
-                if False:  # matched_proximity > required_match:
-                    new_token_id = matched_id
-                    # update tokens table
-                    add_to_tokens = "UPDATE tokens SET document_count = document_count + 1 WHERE id=%(tid)s"
-                    cursor.execute(add_to_tokens, {'tid': matched_id})
-                    db.commit()
-                else:
-                    # print('new token!')
-                    # add to tokens table
-                    add_to_tokens = "INSERT INTO tokens (token, document_count) VALUES (%(str)s, 1)"
-                    cursor.execute(add_to_tokens, {'str': token})
-                    db.commit()
-                    new_token_id = cursor.lastrowid
-            else:
-                new_token_id = row[0]
-                # update tokens table
-                add_to_tokens = "UPDATE tokens SET document_count = document_count + 1 WHERE id=%(tid)s"
-                cursor.execute(add_to_tokens, {'tid': new_token_id})
-                db.commit()
-            # add to keywords table
-            add_to_keywords = "INSERT INTO keywords (tokenId, postId, num_in_post) VALUES (%(tid)s, %(pid)s, %(count)s)"
-            cursor.execute(add_to_keywords, {'tid': new_token_id, 'pid': post_id, 'count': count})
-            db.commit()
-            cursor.close()
+        # otherwise, count the tokens
+        token_counting(post)
+        # TODO: mark initial-load posts as processed to prevent later processing
     return
 
 
+def token_counting(post):
+    global db, replacement, english_vocab
+    # get post text data
+    post_id = post.id
+    post_title = post.title
+    post_text = post.selftext
+    # this regex finds "http" followed by an unknown number of letters and not-letters until, looking ahead, we see a
+    # closing parenthesis, a horizontal space, or a vertical space
+    # we want to replace links with nothing so that they don't mess with our word analysis
+    replacement = ''
+    replace_pattern = r'http(\w|\W)+?(?=\)|\h|\v)'
+    post_text = re.sub(replace_pattern, remove_nonalpha, post_text.lower())
+    post_title = re.sub(replace_pattern, remove_nonalpha, post_title.lower())
+    # this regex finds any character that is NOT lowercase a-z or diacritically marked variants of the same or an
+    # apostrophe or a space
+    # we want to replace these characters with spaces so that words separated by only a slash, dash, line break, etc.,
+    # aren't smushed together
+    replacement = ' '
+    replace_pattern = r'[^a-zà-öø-ÿ\' ]'  # get rid of non-alpha, non-space characters
+    post_text = re.sub(replace_pattern, remove_nonalpha, post_text)
+    post_title = re.sub(replace_pattern, remove_nonalpha, post_title)
+    # this regex is the same as the last one minus the apostrophe
+    # we want to replace apostrophes with nothing to minimize the effect of the ridiculously inordinate amount of
+    # apostrophe-based typos in the world
+    replacement = ''
+    replace_pattern = r'[^a-zà-öø-ÿ ]'
+    post_text = re.sub(replace_pattern, remove_nonalpha, post_text)
+    post_title = re.sub(replace_pattern, remove_nonalpha, post_title)
+    # now split the strings by spaces and combine them into a single array
+    text_array = post_title.split() + post_text.split()
+    text_set = set(text_array)  # gets only one instance of each unique token
+    # add post_id to posts SQL table (have to do this first so foreign keys in other SQL tables don't complain)
+    cursor = db.cursor()
+    add_to_posts = "INSERT INTO posts (id) VALUES (%(pid)s)"
+    cursor.execute(add_to_posts, {'pid': post_id})
+    db.commit()
+    cursor.close()
+    # loop through tokens and add them to the database
+    print("Adding tokens for post %s: \"%s\"" % (post_id, post_title))
+    for token in text_set:
+        # print(' ' + token)
+        # new_token_id = 0
+        count = text_array.count(token)
+        # add counts to SQL database (use Jaccard scoring to determine "source" keyword, or add new ?)
+        cursor = db.cursor()
+        get_token = "SELECT tokens.id FROM tokens WHERE tokens.token LIKE %(wrd)s"
+        cursor.execute(get_token, {'wrd': token})
+        row = cursor.fetchone()
+        # check for match
+        # print ('  ',cursor.rowcount)
+        if cursor.rowcount <= 0:
+            if token in english_vocab:
+                pass
+                # assume it's good and add it
+                # TODO: go to add
+            else:
+                pass
+                # assume it's a typo and try to find it with Jaccard scoring
+                # if score = good
+                # else add it anyway
+            # if no match, get closestMatch()
+            # matched_token_set = cursor.callproc('closestMatch', (token, (0, 'CHAR'), 0, 0))
+            # matched_token = matched_token_set[1]
+            # matched_id = matched_token_set[2]
+            # matched_proximity = matched_token_set[3]
+            # if match is insufficient, add it to the token table
+            # token_length = len(token)
+            # if length <= 3, only 100% is sufficient (won't this still cause bugs -- e.g., fig vs gif?)
+            # as length increases, required match decreases (+1/-5?)
+            # required_match = max(1 - (0.05 * (token_length - 3)), 0.6)
+            # print(matched_token_set)
+            # if False:  # matched_proximity > required_match:
+            #    new_token_id = matched_id
+            #    # update tokens table
+            #    add_to_tokens = "UPDATE tokens SET document_count = document_count + 1 WHERE id=%(tid)s"
+            #    cursor.execute(add_to_tokens, {'tid': matched_id})
+            #    db.commit()
+            # else:
+            # print('new token!')
+            # add to tokens table
+            add_to_tokens = "INSERT INTO tokens (token, document_count) VALUES (%(str)s, 1)"
+            cursor.execute(add_to_tokens, {'str': token})
+            db.commit()
+            new_token_id = cursor.lastrowid
+        else:
+            new_token_id = row[0]
+            # update tokens table
+            add_to_tokens = "UPDATE tokens SET document_count = document_count + 1 WHERE id=%(tid)s"
+            cursor.execute(add_to_tokens, {'tid': new_token_id})
+            db.commit()
+        # add to keywords table
+        add_to_keywords = "INSERT INTO keywords (tokenId, postId, num_in_post) VALUES (%(tid)s, %(pid)s, %(count)s)"
+        cursor.execute(add_to_keywords, {'tid': new_token_id, 'pid': post_id, 'count': count})
+        db.commit()
+        cursor.close()
+
+
 # endregion
-
-def relevant_posts(keywords):  # TODO
-    # with all keywords do SQL:
-    # SELECT postId,COUNT(*) as sameKeywords
-    # FROM `tfIdfTable`
-    # WHERE tokenId in (keywords)
-    # AND tfIdfScore > KEYWORD_THRESHOLD
-    # GROUP BY postId
-    # ORDER BY sameKeywords DESC
-    # return list where sameKeywords > 25%? of number of keywords
-    return ''
-
-
-def find_keywords(post_text):  # TODO
-    # split by chr(7); if nothing after, use query calculation; otherwise, just remove chr(7) and
-    # pretend all are together
-    # split text, reduce to lower-case alpha-numeric only
-    # count instances (get tf)
-    # loop through unique
-    # get idf
-    # calculate_tfidf
-    # sort by score
-    # top scorers = keywords (top 5 or all >keyword threshold, whichever is more, along with scores)
-    return ''
 
 
 # region retrieval functions
@@ -371,26 +401,41 @@ def initial_data_load(subreddit):
     global fromCrash
     submissions = []
     if not fromCrash:
+        print("Doing initial load")
         # top
-        submissions.append(subreddit.top())
+        submissions.append(subreddit.top(limit=1000))
+        print("Got from top")
         # hot
-        submissions.append(subreddit.hot())
+        submissions.append(subreddit.hot(limit=1000))
+        print("Got from hot")
         # gilded
-        submissions.append(subreddit.gilded())
+        submissions.append(subreddit.gilded(limit=1000))
+        print("Got from gilded")
         # controversial
-        submissions.append(subreddit.controversial())
+        submissions.append(subreddit.controversial(limit=1000))
+        print("Got from controversial")
         # search1
-        submissions.append(subreddit.search("title:? self:1", 'relevance'))
-        submissions.append(subreddit.search("title:? self:1", 'hot'))
-        submissions.append(subreddit.search("title:? self:1", 'top'))
-        submissions.append(subreddit.search("title:? self:1", 'new'))
+        params = {'limit': 1000}
+        submissions.append(subreddit.search("title:? self:1", 'relevance', **params))
+        print("Got from ? relevance")
+        submissions.append(subreddit.search("title:? self:1", 'hot', **params))
+        print("Got from ? hot")
+        submissions.append(subreddit.search("title:? self:1", 'top', **params))
+        print("Got from ? top")
+        submissions.append(subreddit.search("title:? self:1", 'new', **params))
+        print("Got from ? new")
         # search2
-        submissions.append(subreddit.search("title:question self:1", 'relevance'))
-        submissions.append(subreddit.search("title:question self:1", 'hot'))
-        submissions.append(subreddit.search("title:question self:1", 'top'))
-        submissions.append(subreddit.search("title:question self:1", 'new'))
+        submissions.append(subreddit.search("title:question self:1", 'relevance', **params))
+        print("Got from q relevance")
+        submissions.append(subreddit.search("title:question self:1", 'hot', **params))
+        print("Got from q hot")
+        submissions.append(subreddit.search("title:question self:1", 'top', **params))
+        print("Got from q top")
+        submissions.append(subreddit.search("title:question self:1", 'new', **params))
+        print("Got from q new")
     # new
-    submissions.append(subreddit.new())
+    submissions.append(subreddit.new(limit=1000))
+    print("Got from new")
     for post_list in submissions:
         retrieve_token_counts(post_list)
     return
@@ -411,11 +456,7 @@ def get_stream(**kwargs) -> praw.models.util.stream_generator:
 # endregion
 
 def handle_command_message(msg):
-    global r
-    global db
-    global subr
-    global cmd_result
-    global reply_message
+    global r, db, subr, cmd_result, reply_message
     for mod in subr.moderator():
         VALID_ADMINS.append(str(mod))
     if msg.author not in VALID_ADMINS:
@@ -456,6 +497,8 @@ if len(sys.argv) > 1:
     fromCrash = (sys.argv[1] != 'initial')
 else:
     fromCrash = True
+
+english_vocab = set(w.lower() for w in corpus.words.words())
 
 try:
     subr = r.subreddit(config.SUBREDDIT)

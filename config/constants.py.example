@@ -8,3 +8,5 @@ SQL_PW = '[that user's password]'
 SQL_DATABASE = '[the name of your SQL database]'
 SUBREDDIT = '[the name of the subreddit the FAQ bot is for]'
 ADMIN_USER = '[your username (for contact purposes)]'
+BOT_NAME = '[name of the bot for display purposes]'
+FLAIRS_TO_IGNORE = ['[lower-case]','[list]','[of]','[text]','[flairs]','[to]','[ignore]']
