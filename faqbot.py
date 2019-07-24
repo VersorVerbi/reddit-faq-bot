@@ -16,7 +16,8 @@ ADMIN_COMMANDS = {
     'NUMKEYS': 'update_numkeys(cmd[1])',
     'NUMLINKS': 'update_numlinks(cmd[1])',
     'QUERY': 'process_query(msg)',
-    'REDUCEUNIQUENESS': 'ignore_token(cmd[1])'
+    'REDUCEUNIQUENESS': 'ignore_token(cmd[1])',
+    'TEST': 'process_test(cmd[1])'
 }
 
 ADMIN_REPLIES = {
@@ -27,7 +28,8 @@ ADMIN_REPLIES = {
     'NUMKEYS': 'new_numkeys(cmd[1])',
     'NUMLINKS': 'new_numlinks(cmd[1])',
     'QUERY': 'query_results()',
-    'REDUCEUNIQUENESS': 'token_ignored(cmd[1])'
+    'REDUCEUNIQUENESS': 'token_ignored(cmd[1])',
+    'TEST': 'test_results(cmd[1])'
 }
 
 ADMIN_DESCRIPTIONS = {
@@ -51,7 +53,12 @@ ADMIN_DESCRIPTIONS = {
     'REDUCEUNIQUENESS word': 'Where `word` is the word/token you want to reduce the influence of. This is appropriate '
                              'only for obvious misspellings or otherwise rare (but irrelevant) words that, due to '
                              'their uniqueness, score as keywords more often than they should. **THIS ACTION CANNOT '
-                             'BE REVERSED. PROCEED WITH CAUTION.**'
+                             'BE REVERSED. PROCEED WITH CAUTION.**',
+    'TEST id': 'Where `id` is the string immediately after `/comments/` in the URL of a thread, e.g., `cdgbpv`. '
+               'Use this command to see (1) evaluated keywords and (2) related posts as determined by the bot. This '
+               'can be helpful for determining false positives, figuring out mod favorites, adding specific posts '
+               'to the database that may have ended up outside our initial queries, and improving the responses of '
+               'the bot in general.'
 }
 # endregion
 
@@ -94,7 +101,7 @@ def add_favorite(new_favorite):
     global db
     if new_favorite is None:
         return -1
-
+    # TODO: make sure it exists first
     sql = 'UPDATE posts SET posts.modFavorite = 1 WHERE posts.id = %(pid)s'
     cursor = db.cursor()
     cursor.execute(sql, {'pid': new_favorite})
@@ -119,6 +126,9 @@ def process_query(message):
 
 def ignore_token(token):
     return 0
+
+def process_test(pid_to_test):
+    return 0
 # endregion
 
 
@@ -142,6 +152,8 @@ def user_signature(is_public=False):
     if is_public:
         output += '; ^^if ^^I ^^have ^^failed, ^^the ^^original ^^recipient ^^of ^^this ^^response ^^or ^^a '
         output += '^^subreddit ^^moderator ^^should ^^reply ^^to ^^this ^^comment ^^with ^^precisely ^^`delete`. '
+        output += '^^Alternatively, ^^report ^^this ^^post ^^to ^^the ^^moderators ^^as ^^inappropriate ^^so '
+        output += '^^that ^^they ^^can ^^remove ^^it ^^promptly.\n\n'
     else:
         output += '. '
     output += '^^If ^^you ^^want ^^my ^^input ^^in ^^a ^^thread, '
@@ -219,25 +231,26 @@ def query_results():
 def token_ignored(token):
     message = ''
     return message
+
+def test_results(pid_to_test):
+    message = ''
+    return message
 # endregion
 
 
 # region analysis functions
-def related_posts(post_id):  # TODO
-    # SELECT DISTINCT keywords.postID FROM keywords WHERE keywords.tokenID IN (tokenList(post_id))
-    # with all keywords do SQL:
-    # SELECT postId,COUNT(*) as sameKeywords
-    # FROM `tfIdfTable`
-    # WHERE tokenId in (keywords)
-    # AND tfIdfScore > KEYWORD_THRESHOLD
-    # GROUP BY postId
-    # ORDER BY sameKeywords DESC
-    # return list where sameKeywords > 25%? of number of keywords
-    return ''
+def related_posts(post_id):  
+    global db
+    cursor = db.cursor()
+    query = "SELECT relatedPosts('%(pid)s');"
+    cursor.execute(query, {'pid': post_id})
+    row = cursor.fetchone()
+    cursor.close()
+    return row.relatedPosts.split(',')
 
 
 def process_post(post):
-    global db
+    global db, r
     post_id = post.id
 
     if post.link_flair_text.lower() in config.FLAIRS_TO_IGNORE or post.stickied or not post.is_self:
@@ -250,6 +263,21 @@ def process_post(post):
 
     token_counting(post)
     list_of_related_posts = related_posts(post_id)
+    output_data = {
+        'title': [],
+        'url': [],
+        'top_cmt_votes': 0,
+        'top_cmt': None
+    }
+    for pid in list_of_related_posts:
+        thread = r.submission(pid)
+        thread.comment_sort = 'confidence'
+        top_comment = thread.comments[0]
+        output_data.title.append(thread.title)
+        output_data.url.append(thread.permalink)
+        if top_comment.score > output_data.top_cmt_votes:
+            output_data.top_cmt_votes = top_comment.score
+            output_data.top_cmt = top_comment
     # TODO: do other stuff, like add a comment with links and a quote
     # TODO: mark the post as processed
     return
