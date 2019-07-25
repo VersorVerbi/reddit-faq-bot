@@ -634,7 +634,7 @@ try:
                 VALID_ADMINS.clear()
                 VALID_ADMINS.append(config.ADMIN_USER)
             if isinstance(caller, praw.models.Message):
-                pass  # caller.delete()
+                caller.delete()
 except Exception as e:
     db.close()
     err_data = sys.exc_info()
