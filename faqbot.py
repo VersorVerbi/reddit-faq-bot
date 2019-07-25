@@ -334,7 +334,7 @@ def token_counting(post):
     # closing parenthesis, a horizontal space, or a vertical space
     # we want to replace links with nothing so that they don't mess with our word analysis
     replacement = ''
-    replace_pattern = r'http(\w|\W)+?(?=\)|\h|\v)'
+    replace_pattern = r'http(\w|\W)+?(?=\)| |\t|\v)'
     post_text = re.sub(replace_pattern, remove_nonalpha, post_text.lower())
     post_title = re.sub(replace_pattern, remove_nonalpha, post_title.lower())
     # this regex finds any character that is NOT lowercase a-z or diacritically marked variants of the same or an
