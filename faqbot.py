@@ -100,25 +100,68 @@ def post_is_processed(post_id):
 
 # region command functions
 def add_favorite(new_favorite):
-    global db
+    global db, r
     if new_favorite is None:
         return -1
-    # TODO: make sure it exists first
-    sql = 'UPDATE posts SET posts.modFavorite = 1 WHERE posts.id = %(pid)s'
+    elif r.submission(new_favorite) is None:
+        return 1
+    elif r.submission(new_favorite).subreddit.display_name != config.SUBREDDIT:
+        return 1
+    sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
     cursor = db.cursor()
     cursor.execute(sql, {'pid': new_favorite})
+    if cursor.fetchone() > 0:
+        return 1
+    cursor.fetchall()
+    sql = 'UPDATE posts SET posts.modFavorite = 1 WHERE posts.id = %(pid)s'
+    cursor.execute(sql, {'pid': new_favorite})
+    db.commit()
+    cursor.close()
     return 0
 
 
 def remove_favorite(fav_to_remove):
+    global db, r
+    if fav_to_remove is None:
+        return -1
+    elif r.submission(fav_to_remove) is None:
+        return 1
+    elif r.submission(fav_to_remove).subreddit.display_name != config.SUBREDDIT:
+        return 1
+    sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
+    cursor = db.cursor()
+    cursor.execute(sql, {'pid': fav_to_remove})
+    if cursor.fetchone() <= 0:
+        return 1
+    cursor.fetchall()
+    sql = 'UPDATE posts SET posts.modFavorite = 0 WHERE posts.id = %(pid)s'
+    cursor.execute(sql, {'pid': fav_to_remove})
+    db.commit()
+    cursor.close()
     return 0
 
 
 def update_numkeys(numkeys):
+    global db
+    if numkeys is None:
+        return -1
+    elif not isinstance(numkeys, int):
+        return -1
+    elif numkeys <= 0:
+        return 1
+    # TODO: add settings to database? then save this
     return 0
 
 
 def update_numlinks(numlinks):
+    global db
+    if numlinks is None:
+        return -1
+    elif not isinstance(numlinks, int):
+        return -1
+    elif numlinks <= 0:
+        return 1
+    # TODO: add settings to database? then save this
     return 0
 
 
@@ -127,6 +170,14 @@ def process_query(message):
 
 
 def ignore_token(token):
+    global db
+    if token is None:
+        return -1
+    sql = 'UPDATE tokens SET tokens.document_count = tokens.document_count + 100 WHERE tokens.token LIKE %(tok)s'
+    cursor = db.cursor()
+    cursor.execute(sql, {'tok': token})
+    db.commit()
+    cursor.close()
     return 0
 
 
