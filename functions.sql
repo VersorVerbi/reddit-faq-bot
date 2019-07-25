@@ -14,6 +14,7 @@ BEGIN
   END LOOP check_keywords;
   CLOSE keyword_cursor;
   SELECT GROUP_CONCAT(token SEPARATOR ', ') INTO @output FROM (SELECT tokens.token,document_keywords.tfIdf FROM tokens INNER JOIN document_keywords ON tokens.id = document_keywords.tokenID ORDER BY document_keywords.tfIdf DESC LIMIT 5) as s1;
+  DROP TEMPORARY TABLE document_keywords;
   RETURN @output;
 END
 
@@ -123,6 +124,7 @@ BEGIN
                 (SELECT tid FROM source_tokens AS source_token_list);
 
     SELECT GROUP_CONCAT(pid SEPARATOR ',') INTO postList FROM (SELECT pid, AVG(tfIdf) as tfIdfAvg FROM related_posts WHERE pid != postQid GROUP BY pid ORDER BY tfIdfAvg DESC LIMIT 5) AS top_five;
-
+	DROP TEMPORARY TABLE source_tokens;
+    DROP TEMPORARY TABLE related_posts;
     RETURN postList;
 END
