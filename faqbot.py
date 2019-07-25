@@ -1,9 +1,11 @@
+from typing import Dict, List, Any, Union
+
 import praw
 import mysql.connector
 import re
 import sys
 import traceback
-from nltk import corpus
+import nltk
 from config import constants as config
 
 
@@ -127,6 +129,7 @@ def process_query(message):
 def ignore_token(token):
     return 0
 
+
 def process_test(pid_to_test):
     return 0
 # endregion
@@ -232,6 +235,7 @@ def token_ignored(token):
     message = ''
     return message
 
+
 def test_results(pid_to_test):
     message = ''
     return message
@@ -262,22 +266,22 @@ def process_post(post):
         return
 
     token_counting(post)
-    list_of_related_posts = related_posts(post_id)
-    output_data = {
+    list_of_related_posts: List[str] = related_posts(post_id)
+    output_data: Dict[str, Union[Union[List[Any], int, praw.models.Comment], Any]] = {
         'title': [],
         'url': [],
         'top_cmt_votes': 0,
         'top_cmt': None
     }
     for pid in list_of_related_posts:
-        thread = r.submission(pid)
+        thread: praw.models.Submission = r.submission(pid)
         thread.comment_sort = 'confidence'
-        top_comment = thread.comments[0]
-        output_data.title.append(thread.title)
-        output_data.url.append(thread.permalink)
-        if top_comment.score > output_data.top_cmt_votes:
-            output_data.top_cmt_votes = top_comment.score
-            output_data.top_cmt = top_comment
+        top_comment: praw.models.Comment = thread.comments[0]
+        output_data['title'].append(thread.title)
+        output_data['url'].append(thread.permalink)
+        if top_comment.score > output_data['top_cmt_votes']:
+            output_data['top_cmt_votes'] = top_comment.score
+            output_data['top_cmt'] = top_comment
     # TODO: do other stuff, like add a comment with links and a quote
     # TODO: mark the post as processed
     return
@@ -526,7 +530,8 @@ if len(sys.argv) > 1:
 else:
     fromCrash = True
 
-english_vocab = set(w.lower() for w in corpus.words.words())
+nltk.download('words')
+english_vocab = set(w.lower() for w in nltk.corpus.words.words())
 
 try:
     subr = r.subreddit(config.SUBREDDIT)
