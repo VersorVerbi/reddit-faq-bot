@@ -5,7 +5,8 @@ BEGIN
   DECLARE keyword_cursor CURSOR FOR SELECT keywords.tokenId FROM keywords WHERE keywords.postId = postQid;
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
   OPEN keyword_cursor;
-  CREATE TEMPORARY TABLE IF NOT EXISTS document_keywords (tokenID int, tfIdf float);
+  DROP TEMPORARY TABLE IF EXISTS document_keywords;
+  CREATE TEMPORARY TABLE document_keywords (tokenID int, tfIdf float);
   check_keywords: LOOP
     FETCH keyword_cursor INTO keyword;
     IF finished = 1 THEN LEAVE check_keywords; END IF;
@@ -42,7 +43,8 @@ BEGIN
   DECLARE keyword_cursor CURSOR FOR SELECT keywords.tokenId FROM keywords WHERE keywords.postId = postQid;
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
   OPEN keyword_cursor;
-  CREATE TEMPORARY TABLE IF NOT EXISTS document_keywords (tokenID int, tfIdf float);
+  DROP TEMPORARY TABLE IF EXISTS document_keywords;
+  CREATE TEMPORARY TABLE document_keywords (tokenID int, tfIdf float);
   check_keywords: LOOP
     FETCH keyword_cursor INTO keyword;
     IF finished = 1 THEN LEAVE check_keywords; END IF;
@@ -51,6 +53,7 @@ BEGIN
   END LOOP check_keywords;
   CLOSE keyword_cursor;
   SELECT GROUP_CONCAT(id SEPARATOR ',') INTO @output FROM (SELECT tokens.id,document_keywords.tfIdf FROM tokens INNER JOIN document_keywords ON tokens.id = document_keywords.tokenID ORDER BY document_keywords.tfIdf DESC LIMIT 5) as s1;
+  DROP TEMPORARY TABLE document_keywords;
   RETURN @output;
 END
 
@@ -106,7 +109,8 @@ BEGIN
     SET sourceList = tokenList(postQid);
     SET numTokens = LENGTH(sourceList) - LENGTH(REPLACE(sourceList,',','')) + 1;
     SET @myNum = numTokens;
-    CREATE TEMPORARY TABLE IF NOT EXISTS source_tokens (tid INT);
+    DROP TEMPORARY TABLE IF EXISTS source_tokens;
+    CREATE TEMPORARY TABLE source_tokens (tid INT);
     SET @myTokens = sourceList;
     get_tokens: LOOP
         IF @myNum = 0 OR LENGTH(@myTokens) = 0 THEN LEAVE get_tokens; END IF;
@@ -114,8 +118,9 @@ BEGIN
         SET @myNum = @myNum - 1;
         SET @myTokens = SUBSTRING_INDEX(@myTokens,',',-@myNum);
     END LOOP get_tokens;
-
-    CREATE TEMPORARY TABLE IF NOT EXISTS related_posts (pid VARCHAR(20), tid INT, tfIdf FLOAT);
+    
+    DROP TEMPORARY TABLE IF EXISTS related_posts;
+    CREATE TEMPORARY TABLE related_posts (pid VARCHAR(20), tid INT, tfIdf FLOAT);
 
     INSERT INTO related_posts
         SELECT keywords.postID, keywords.tokenID, tfIdfScore(keywords.tokenID, keywords.postID) AS tfIdf
