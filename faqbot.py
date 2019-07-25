@@ -498,7 +498,7 @@ def token_counting(post):
             add_to_keywords = "INSERT INTO keywords (tokenId, postId, num_in_post) VALUES (%(tid)s, %(pid)s, %(count)s)"
             cursor.execute(add_to_keywords, {'tid': new_token_id, 'pid': post_id, 'count': count})
             db.commit()
-        except mysql.connector.errors.IntegrityError e:
+        except mysql.connector.errors.IntegrityError as e:
             pass
         cursor.close()
 
