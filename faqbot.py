@@ -304,6 +304,16 @@ def related_posts(post_id):
     return row.relatedPosts.split(',')
 
 
+def post_keywords(post_id):
+    global db
+    cursor = db.cursor()
+    query = "SELECT keywordList('%(pid)s');"
+    cursor.execute(query, {'pid': post_id})
+    row = cursor.fetchone()
+    cursor.close()
+    return row.keywordList
+
+
 def process_post(post):
     global db, r
     post_id = post.id
@@ -317,6 +327,7 @@ def process_post(post):
         return
 
     token_counting(post)
+    keyword_list: str = post_keywords(post_id)
     list_of_related_posts: List[str] = related_posts(post_id)
     output_data: Dict[str, Union[Union[List[Any], int, praw.models.Comment], Any]] = {
         'title': [],
@@ -329,10 +340,26 @@ def process_post(post):
         thread.comment_sort = 'confidence'
         top_comment: praw.models.Comment = thread.comments[0]
         output_data['title'].append(thread.title)
-        output_data['url'].append(thread.permalink)
+        output_data['url'].append('https://np.reddit.com/' + thread.permalink)
         if top_comment.score > output_data['top_cmt_votes']:
             output_data['top_cmt_votes'] = top_comment.score
             output_data['top_cmt'] = top_comment
+    reply_body = 'Our analysis of this post indicates that the keywords are: ' + keyword_list + '\n\n'
+                 'Here are some other posts that are related:\n\n'
+    for title, url in zip(output_data['title'], output_data['url']):
+        reply_body += '* [' + title + '](' + url + ')\n'
+    reply_body += '\nThe top-voted comment from those threads is this one:\n\n'
+    comment_body = output_data['top_cmt'].body
+    replacement = '\n\n> '
+    replace_pattern = '\n\n'
+    comment_body = re.sub(replace_pattern, remove_nonalpha, comment_body)
+    if len(reply_body) + len(comment_body) > 10000:
+        comment_body = comment_body.split('\n')[0]  # don't have multi-line links, but don't have too many characters, either
+        reply_body += '* [' + comment_body[:50] + '...](https://np.reddit.com/' + output_data['top_cmt'].permalink + ')'
+    else:
+        # the first line didn't have any line breaks, so we need to add another quote marker there
+        reply_body += '>' + comment_body
+    r.redditor(config.ADMIN_USER).message('Reply test: ' + post_id, reply_body)
     # TODO: do other stuff, like add a comment with links and a quote
     # TODO: mark the post as processed
     return
