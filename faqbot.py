@@ -1,5 +1,4 @@
 from typing import Dict, List, Any, Union
-
 import praw
 import mysql.connector
 import re
@@ -345,7 +344,7 @@ def process_post(post):
             output_data['top_cmt_votes'] = top_comment.score
             output_data['top_cmt'] = top_comment
     reply_body = 'Our analysis of this post indicates that the keywords are: ' + keyword_list + '\n\n'
-                 'Here are some other posts that are related:\n\n'
+    reply_body += 'Here are some other posts that are related:\n\n'
     for title, url in zip(output_data['title'], output_data['url']):
         reply_body += '* [' + title + '](' + url + ')\n'
     reply_body += '\nThe top-voted comment from those threads is this one:\n\n'
@@ -631,7 +630,7 @@ try:
                 VALID_ADMINS.append(config.ADMIN_USER)
 except Exception as e:
     db.close()
-    err_data = sys.enc_info()
+    err_data = sys.exc_info()
     err_msg = str(err_data[1]) + '\n\n'  # error message
     traces = traceback.format_list(traceback.extract_tb(err_data[2]))
     for trace in traces:
