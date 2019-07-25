@@ -353,12 +353,14 @@ def process_post(post):
     replacement = '\n\n> '
     replace_pattern = '\n\n'
     comment_body = re.sub(replace_pattern, remove_nonalpha, comment_body)
-    if len(reply_body) + len(comment_body) > 10000:
+    reply_signature = user_signature(True)
+    if len(reply_body) + len(comment_body) + len(reply_signature) > 9999:
         comment_body = comment_body.split('\n')[0]  # don't have multi-line links, but don't have too many characters, either
         reply_body += '* [' + comment_body[:50] + '...](https://np.reddit.com/' + output_data['top_cmt'].permalink + ')'
     else:
         # the first line didn't have any line breaks, so we need to add another quote marker there
         reply_body += '>' + comment_body
+    reply_body += reply_signature
     r.redditor(config.ADMIN_USER).message('Reply test: ' + post_id, reply_body)
     # TODO: do other stuff, like add a comment with links and a quote
     # TODO: mark the post as processed
