@@ -214,7 +214,7 @@ def user_signature(is_public=False):
     if is_public:
         output += '^^Reply ^^with ^^`delete` ^^to ^^delete ^^\(mods ^^and ^^OP ^^only.)\n\n'
     output += '^^Tag ^^me ^^with ^^a ^^query ^^to ^^get ^^my ^^response, ^^or ^^just ^^tag ^^me ^^to ^^get ^^my ^^response ^^to ^^the ^^parent ^^comment/post.\n\n'
-    output += '^^PM ^^me ^^a ^^query ^^for ^^a ^^private ^^response.'
+    output += '^^PM ^^me ^^a ^^query ^^for ^^a ^^private ^^response.\n\n'
     output += '^^PM ^^/u/' + config.ADMIN_USER + ' ^^with ^^questions, ^^comments, ^^or ^^bug ^^reports.'
     return output
 
