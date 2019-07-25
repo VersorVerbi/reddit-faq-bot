@@ -89,11 +89,21 @@ def command_ok():
 def post_is_processed(post_id):
     global db
     cursor = db.cursor()
-    query = "SELECT isKwProcessed FROM faq_posts WHERE id=%s"
-    cursor.execute(query, post_id)
+    query = "SELECT isKwProcessed FROM faq_posts WHERE id=%(pid)s"
+    cursor.execute(query, {'pid': post_id})
     is_processed = cursor.fetchone().isKwProcessed > 0
     cursor.close()
     return is_processed
+
+
+def past_is_prologue():
+    global db
+    cursor = db.cursor()
+    query = "UPDATE posts SET isKwProcessed = 1 WHERE isKwProcessed = 0;"
+    cursor.execute(query);
+    db.commit()
+    cursor.close()
+    return
 # endregion
 
 
@@ -201,21 +211,11 @@ def admin_signature():
 
 def user_signature(is_public=False):
     output = '\n\n------\n\n'
-    output += '^^I ^^am ^^only ^^trying ^^to ^^help'
     if is_public:
-        output += '; ^^if ^^I ^^have ^^failed, ^^the ^^original ^^recipient ^^of ^^this ^^response ^^or ^^a '
-        output += '^^subreddit ^^moderator ^^should ^^reply ^^to ^^this ^^comment ^^with ^^precisely ^^`delete`. '
-        output += '^^Alternatively, ^^report ^^this ^^post ^^to ^^the ^^moderators ^^as ^^inappropriate ^^so '
-        output += '^^that ^^they ^^can ^^remove ^^it ^^promptly.\n\n'
-    else:
-        output += '. '
-    output += '^^If ^^you ^^want ^^my ^^input ^^in ^^a ^^thread, '
-    output += '^^tag ^^/u/' + config.REDDIT_USER + ' ^^with ^^a ^^query ^^or ^^question. ^^Alternatively, '
-    output += '^^include ^^**no** ^^other ^^text ^^and ^^tag ^^me ^^to ^^get ^^my ^^response ^^based ^^on '
-    output += '^^the ^^parent ^^comment ^^or ^^post. ^^If ^^you ^^have ^^a ^^private ^^question, ^^always '
-    output += '^^feel ^^free ^^to ^^send ^^a ^^message ^^to ^^me ^^with ^^your ^^short ^^query.\n\n^^Please '
-    output += '^^send ^^a ^^message ^^to ^^/u/' + config.ADMIN_USER + ' ^^with ^^questions, ^^comments, '
-    output += '^^or ^^bug ^^reports.'
+        output += '^^Reply ^^with ^^`delete` ^^to ^^delete ^^\(mods ^^and ^^OP ^^only.)\n\n'
+    output += '^^Tag ^^me ^^with ^^a ^^query ^^to ^^get ^^my ^^response, ^^or ^^just ^^tag ^^me ^^to ^^get ^^my ^^response ^^to ^^the ^^parent ^^comment/post.\n\n'
+    output += '^^PM ^^me ^^a ^^query ^^for ^^a ^^private ^^response.'
+    output += '^^PM ^^/u/' + config.ADMIN_USER + ' ^^with ^^questions, ^^comments, ^^or ^^bug ^^reports.'
     return output
 
 
@@ -296,30 +296,33 @@ def test_results(pid_to_test):
 def related_posts(post_id):  
     global db
     cursor = db.cursor()
-    query = "SELECT relatedPosts('%(pid)s');"
+    query = "SELECT relatedPosts(%(pid)s);"
     cursor.execute(query, {'pid': post_id})
     row = cursor.fetchone()
     cursor.close()
-    return row.relatedPosts.split(',')
+    return row[0].split(',')
 
 
 def post_keywords(post_id):
     global db
     cursor = db.cursor()
-    query = "SELECT keywordList('%(pid)s');"
+    query = "SELECT keywordList(%(pid)s);"
     cursor.execute(query, {'pid': post_id})
     row = cursor.fetchone()
     cursor.close()
-    return row.keywordList
+    return row[0]
 
 
 def process_post(post):
     global db, r
     post_id = post.id
 
-    if post.link_flair_text.lower() in config.FLAIRS_TO_IGNORE or post.stickied or not post.is_self:
-        # don't reply to mod posts or specified flaired posts or non-self-text posts
-        return
+    # don't reply to mod posts or specified flaired posts or non-self-text posts
+    if post.link_flair_text is not None:
+        if post.link_flair_text.lower() in config.FLAIRS_TO_IGNORE:
+            return
+    if post.stickied or not post.is_self:
+            return
 
     # if already processed, quit
     if post_is_processed(post_id):
@@ -337,12 +340,16 @@ def process_post(post):
     for pid in list_of_related_posts:
         thread: praw.models.Submission = r.submission(pid)
         thread.comment_sort = 'confidence'
-        top_comment: praw.models.Comment = thread.comments[0]
+        if len(thread.comments) > 0:
+            top_comment: praw.models.Comment = thread.comments[0]
+        else:
+            top_comment = None
         output_data['title'].append(thread.title)
         output_data['url'].append('https://np.reddit.com/' + thread.permalink)
-        if top_comment.score > output_data['top_cmt_votes']:
-            output_data['top_cmt_votes'] = top_comment.score
-            output_data['top_cmt'] = top_comment
+        if top_comment is not None:
+            if top_comment.score > output_data['top_cmt_votes']:
+                output_data['top_cmt_votes'] = top_comment.score
+                output_data['top_cmt'] = top_comment
     reply_body = 'Our analysis of this post indicates that the keywords are: ' + keyword_list + '\n\n'
     reply_body += 'Here are some other posts that are related:\n\n'
     for title, url in zip(output_data['title'], output_data['url']):
@@ -421,7 +428,7 @@ def token_counting(post):
     # we want to replace these characters with spaces so that words separated by only a slash, dash, line break, etc.,
     # aren't smushed together
     replacement = ' '
-    replace_pattern = r'[^a-zà-öø-ÿ\' ]'  # get rid of non-alpha, non-space characters
+    replace_pattern = r'[^a-zà-öø-ÿ\'’ ]'  # get rid of non-alpha, non-space characters
     post_text = re.sub(replace_pattern, remove_nonalpha, post_text)
     post_title = re.sub(replace_pattern, remove_nonalpha, post_title)
     # this regex is the same as the last one minus the apostrophe
@@ -436,7 +443,7 @@ def token_counting(post):
     text_set = set(text_array)  # gets only one instance of each unique token
     # add post_id to posts SQL table (have to do this first so foreign keys in other SQL tables don't complain)
     cursor = db.cursor()
-    add_to_posts = "INSERT INTO posts (id) VALUES (%(pid)s)"
+    add_to_posts = "INSERT IGNORE INTO posts (id) VALUES (%(pid)s)"
     cursor.execute(add_to_posts, {'pid': post_id})
     db.commit()
     cursor.close()
@@ -483,7 +490,7 @@ def token_counting(post):
             # else:
             # print('new token!')
             # add to tokens table
-            add_to_tokens = "INSERT INTO tokens (token, document_count) VALUES (%(str)s, 1)"
+            add_to_tokens = "INSERT IGNORE INTO tokens (token, document_count) VALUES (%(str)s, 1)"
             cursor.execute(add_to_tokens, {'str': token})
             db.commit()
             new_token_id = cursor.lastrowid
@@ -494,12 +501,9 @@ def token_counting(post):
             cursor.execute(add_to_tokens, {'tid': new_token_id})
             db.commit()
         # add to keywords table
-        try:
-            add_to_keywords = "INSERT INTO keywords (tokenId, postId, num_in_post) VALUES (%(tid)s, %(pid)s, %(count)s)"
-            cursor.execute(add_to_keywords, {'tid': new_token_id, 'pid': post_id, 'count': count})
-            db.commit()
-        except mysql.connector.errors.IntegrityError as e:
-            pass
+        add_to_keywords = "INSERT IGNORE INTO keywords (tokenId, postId, num_in_post) VALUES (%(tid)s, %(pid)s, %(count)s)"
+        cursor.execute(add_to_keywords, {'tid': new_token_id, 'pid': post_id, 'count': count})
+        db.commit()
         cursor.close()
 
 
@@ -511,8 +515,7 @@ def initial_data_load(subreddit):
     # Reddit limits the results of each of these calls to 1000 posts; there will undoubtedly be some overlap between
     # these, but by using all of them, we're likely to get a larger number of total posts for analysis (although,
     # unfortunately, only a very small number of the total submissions on the subreddit)
-    global db
-    global fromCrash
+    global db, fromCrash
     submissions = []
     if not fromCrash:
         print("Doing initial load")
@@ -598,7 +601,6 @@ def handle_command_message(msg):
                 exec(code_to_exec, globals(), locals())
                 reply_message += admin_signature()
     msg.reply(reply_message)
-    msg.delete()
     return
 
 
@@ -618,9 +620,9 @@ english_vocab = set(w.lower() for w in nltk.corpus.words.words())
 try:
     subr = r.subreddit(config.SUBREDDIT)
     initial_data_load(subr)
-    raise Exception('quit before "constant" loop')
+    past_is_prologue()
     while True:
-        callers = get_stream(**kwargs)
+        callers = get_stream()
         for caller in callers:
             if isinstance(caller, praw.models.Message):
                 handle_command_message(caller)
@@ -631,6 +633,8 @@ try:
             if len(VALID_ADMINS) > 1:
                 VALID_ADMINS.clear()
                 VALID_ADMINS.append(config.ADMIN_USER)
+            if isinstance(caller, praw.models.Message):
+                pass  # caller.delete()
 except Exception as e:
     db.close()
     err_data = sys.exc_info()
