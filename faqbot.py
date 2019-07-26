@@ -65,15 +65,15 @@ ADMIN_DESCRIPTIONS = {
 
 
 # region globals
-VALID_ADMINS = [config.ADMIN_USER]
-reply_message = ''
-cmd_result = 0
-replacement = None
+VALID_ADMINS: List[str] = [config.ADMIN_USER]
+reply_message: str = ''
+cmd_result: int = 0
+replacement: str = ''
 # endregion
 
 
 # region basic functions
-def switch(dictionary, default, value):
+def switch(dictionary: Dict, default, value):
     return dictionary.get(value, default)
 
 
@@ -86,7 +86,7 @@ def command_ok():
     return 0
 
 
-def post_is_processed(post_id):
+def post_is_processed(post_id: str):
     global db
     cursor = db.cursor()
     query = "SELECT isKwProcessed FROM faq_posts WHERE id=%(pid)s"
@@ -100,7 +100,7 @@ def past_is_prologue():
     global db
     cursor = db.cursor()
     query = "UPDATE posts SET isKwProcessed = 1 WHERE isKwProcessed = 0;"
-    cursor.execute(query);
+    cursor.execute(query)
     db.commit()
     cursor.close()
     return
@@ -213,7 +213,8 @@ def user_signature(is_public=False):
     output = '\n\n------\n\n'
     if is_public:
         output += '^^Reply ^^with ^^`delete` ^^to ^^delete ^^\(mods ^^and ^^OP ^^only.)\n\n'
-    output += '^^Tag ^^me ^^with ^^a ^^query ^^to ^^get ^^my ^^response, ^^or ^^just ^^tag ^^me ^^to ^^get ^^my ^^response ^^to ^^the ^^parent ^^comment/post.\n\n'
+    output += '^^Tag ^^me ^^with ^^a ^^query ^^to ^^get ^^my ^^response, ^^or ^^just ^^tag ^^me ^^to ^^get ^^my ' \
+              '^^response ^^to ^^the ^^parent ^^comment/post.\n\n'
     output += '^^PM ^^me ^^a ^^query ^^for ^^a ^^private ^^response.\n\n'
     output += '^^PM ^^/u/' + config.ADMIN_USER + ' ^^with ^^questions, ^^comments, ^^or ^^bug ^^reports.'
     return output
@@ -314,7 +315,7 @@ def post_keywords(post_id):
 
 
 def process_post(post):
-    global db, r
+    global db, r, replacement
     post_id = post.id
 
     # don't reply to mod posts or specified flaired posts or non-self-text posts
@@ -342,6 +343,7 @@ def process_post(post):
         thread.comment_sort = 'confidence'
         if len(thread.comments) > 0:
             top_comment: praw.models.Comment = thread.comments[0]
+            # TODO: skip deleted comments and get next top comment
         else:
             top_comment = None
         output_data['title'].append(thread.title)
@@ -361,7 +363,8 @@ def process_post(post):
     comment_body = re.sub(replace_pattern, remove_nonalpha, comment_body)
     reply_signature = user_signature(True)
     if len(reply_body) + len(comment_body) + len(reply_signature) > 9999:
-        comment_body = comment_body.split('\n')[0]  # don't have multi-line links, but don't have too many characters, either
+        # don't have multi-line links, but don't have too many characters, either
+        comment_body = comment_body.split('\n')[0]
         reply_body += '* [' + comment_body[:50] + '...](https://np.reddit.com/' + output_data['top_cmt'].permalink + ')'
     else:
         # the first line didn't have any line breaks, so we need to add another quote marker there
@@ -501,7 +504,8 @@ def token_counting(post):
             cursor.execute(add_to_tokens, {'tid': new_token_id})
             db.commit()
         # add to keywords table
-        add_to_keywords = "INSERT IGNORE INTO keywords (tokenId, postId, num_in_post) VALUES (%(tid)s, %(pid)s, %(count)s)"
+        add_to_keywords = "INSERT IGNORE INTO keywords (tokenId, postId, num_in_post) " \
+                          "VALUES (%(tid)s, %(pid)s, %(count)s)"
         cursor.execute(add_to_keywords, {'tid': new_token_id, 'pid': post_id, 'count': count})
         db.commit()
         cursor.close()
@@ -555,14 +559,16 @@ def initial_data_load(subreddit):
     print("Got from new")
     for post_list in submissions:
         retrieve_token_counts(post_list)
+    if not fromCrash:
+        past_is_prologue()
     return
 
 
-def get_stream(**kwargs) -> praw.models.util.stream_generator:
+def get_stream() -> praw.models.util.stream_generator:
     global r
     target_sub = r.subreddit(config.SUBREDDIT)
     results = []
-    results.extend(target_sub.new(**kwargs))
+    results.extend(target_sub.new())
     results.extend(r.inbox.messages())
     results.extend(r.inbox.comment_replies())
     results.extend(r.inbox.mentions())
@@ -620,7 +626,6 @@ english_vocab = set(w.lower() for w in nltk.corpus.words.words())
 try:
     subr = r.subreddit(config.SUBREDDIT)
     initial_data_load(subr)
-    past_is_prologue()
     while True:
         callers = get_stream()
         for caller in callers:
