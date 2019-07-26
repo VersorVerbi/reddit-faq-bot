@@ -229,7 +229,7 @@ def invalid_command(cmd):
 
 
 def invalid_params(cmd):
-    output = 'You entered `' + cmd.join(' ') + '`.\n\n'
+    output = 'You entered `' + ' '.join(cmd) + '`.\n\n'
     output += 'You have entered invalid parameters for your command (alpha instead of numeric, for example). ' \
            'Don\'t do that.'
     return output
