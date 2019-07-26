@@ -323,7 +323,7 @@ def process_post(post):
         if post.link_flair_text.lower() in config.FLAIRS_TO_IGNORE:
             return
     if post.stickied or not post.is_self:
-            return
+        return
 
     # if already processed, quit
     if post_is_processed(post_id):
@@ -352,6 +352,19 @@ def process_post(post):
             if top_comment.score > output_data['top_cmt_votes']:
                 output_data['top_cmt_votes'] = top_comment.score
                 output_data['top_cmt'] = top_comment
+    reply_body = post_analysis_message(keyword_list, output_data)
+    r.redditor(config.ADMIN_USER).message('Reply test: ' + post_id, reply_body)
+    # TODO: do other stuff, like add a comment with links and a quote
+    cursor = db.cursor()
+    sql = 'UPDATE posts SET isKwProcessed = 1 WHERE id = %(pid)s;'
+    cursor.execute(sql, {'pid': post_id})
+    db.commit()
+    cursor.close()
+    return
+
+
+def post_analysis_message(keyword_list, output_data):
+    global replacement
     reply_body = 'Our analysis of this post indicates that the keywords are: ' + keyword_list + '\n\n'
     reply_body += 'Here are some other posts that are related:\n\n'
     for title, url in zip(output_data['title'], output_data['url']):
@@ -370,10 +383,7 @@ def process_post(post):
         # the first line didn't have any line breaks, so we need to add another quote marker there
         reply_body += '>' + comment_body
     reply_body += reply_signature
-    r.redditor(config.ADMIN_USER).message('Reply test: ' + post_id, reply_body)
-    # TODO: do other stuff, like add a comment with links and a quote
-    # TODO: mark the post as processed
-    return
+    return reply_body
 
 
 def process_comment(cmt):
