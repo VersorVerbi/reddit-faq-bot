@@ -91,7 +91,7 @@ def post_is_processed(post_id: str):
     cursor = db.cursor()
     query = "SELECT isKwProcessed FROM posts WHERE id=%(pid)s"
     cursor.execute(query, {'pid': post_id})
-    is_processed = cursor.fetchone().isKwProcessed > 0
+    is_processed = cursor.fetchone()[0] > 0
     cursor.close()
     return is_processed
 
@@ -119,7 +119,7 @@ def add_favorite(new_favorite):
     sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
     cursor = db.cursor()
     cursor.execute(sql, {'pid': new_favorite})
-    if cursor.fetchone() > 0:
+    if cursor.fetchone()[0] > 0:
         return 1
     cursor.fetchall()
     sql = 'UPDATE posts SET posts.modFavorite = 1 WHERE posts.id = %(pid)s'
@@ -140,7 +140,7 @@ def remove_favorite(fav_to_remove):
     sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
     cursor = db.cursor()
     cursor.execute(sql, {'pid': fav_to_remove})
-    if cursor.fetchone() <= 0:
+    if cursor.fetchone()[0] <= 0:
         return 1
     cursor.fetchall()
     sql = 'UPDATE posts SET posts.modFavorite = 0 WHERE posts.id = %(pid)s'
