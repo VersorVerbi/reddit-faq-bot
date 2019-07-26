@@ -228,9 +228,11 @@ def invalid_command(cmd):
     return output
 
 
-def invalid_params():
-    return 'You have entered invalid parameters for your command (alpha instead of numeric, for example). ' \
+def invalid_params(cmd):
+    output = 'You entered `' + cmd.join(' ') + '`.\n\n'
+    output += 'You have entered invalid parameters for your command (alpha instead of numeric, for example). ' \
            'Don\'t do that.'
+    return output
 
 
 def improper_params(cmd):
@@ -621,7 +623,7 @@ def handle_command_message(msg):
             code_to_exec = 'global cmd_result; cmd_result = ' + switch(ADMIN_COMMANDS, '-1', cmd[0])
             exec(code_to_exec, globals(), locals())
             if cmd_result < 0:
-                reply_message = invalid_params()
+                reply_message = invalid_params(cmd)
             elif cmd_result > 0:
                 reply_message = improper_params(cmd[0])
             else:
