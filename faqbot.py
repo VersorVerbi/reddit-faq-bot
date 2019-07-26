@@ -182,7 +182,7 @@ def ignore_token(token):
     global db
     if token is None:
         return -1
-    sql = 'UPDATE tokens SET tokens.document_count = tokens.document_count + 100 WHERE tokens.token LIKE %(tok)s'
+    sql = 'UPDATE tokens SET tokens.document_count = tokens.document_count + 1000 WHERE tokens.token LIKE %(tok)s'
     cursor = db.cursor()
     cursor.execute(sql, {'tok': token})
     db.commit()
@@ -347,7 +347,7 @@ def process_post(post):
         else:
             top_comment = None
         output_data['title'].append(thread.title)
-        output_data['url'].append('https://np.reddit.com/' + thread.permalink)
+        output_data['url'].append('https://np.reddit.com' + thread.permalink)
         if top_comment is not None:
             if top_comment.score > output_data['top_cmt_votes']:
                 output_data['top_cmt_votes'] = top_comment.score
@@ -378,7 +378,7 @@ def post_analysis_message(keyword_list, output_data):
     if len(reply_body) + len(comment_body) + len(reply_signature) > 9999:
         # don't have multi-line links, but don't have too many characters, either
         comment_body = comment_body.split('\n')[0]
-        reply_body += '* [' + comment_body[:50] + '...](https://np.reddit.com/' + output_data['top_cmt'].permalink + ')'
+        reply_body += '* [' + comment_body[:50] + '...](https://np.reddit.com' + output_data['top_cmt'].permalink + ')'
     else:
         # the first line didn't have any line breaks, so we need to add another quote marker there
         reply_body += '>' + comment_body
@@ -399,6 +399,11 @@ def process_comment(cmt):
     else:  # we have been summoned
         pass  # TODO: handle a comment
     return
+
+
+def handle_query(short_str: str):
+    # TODO: actually implement this
+    return short_str
 
 
 def retrieve_token_counts(submissions):
@@ -593,29 +598,36 @@ def handle_command_message(msg):
     for mod in subr.moderator():
         VALID_ADMINS.append(str(mod))
     if msg.author not in VALID_ADMINS:
+        if msg.author == config.REDDIT_USER:
+            # ignore myself
+            msg.delete()
+            return
         if msg.subject.split()[0].upper() == 'HELP':
             reply_message = help_text()
         else:
-            reply_message = handle_query(msg.subject + ' ' + msg.body) + user_signature(False)
+            if msg.subject is not None and msg.body is not None:
+                reply_message = handle_query(msg.subject + ' ' + msg.body) + user_signature(False)
+            else:
+                return
     else:
         cmd = msg.subject.split()
         if cmd[0].upper() == 'QUERY':
-            reply_message = handle_query(msg.body) + admin_signature()
+            reply_message = handle_query(msg.body)
         elif cmd[0].upper() not in ADMIN_COMMANDS:
             cmd = msg.body.split()
         if cmd[0].upper() not in ADMIN_COMMANDS:
-            reply_message = invalid_command(cmd[0]) + admin_signature()
+            reply_message = invalid_command(cmd[0])
         else:
             code_to_exec = 'global cmd_result; cmd_result = ' + switch(ADMIN_COMMANDS, '-1', cmd[0])
             exec(code_to_exec, globals(), locals())
             if cmd_result < 0:
-                reply_message = invalid_params() + admin_signature()
+                reply_message = invalid_params()
             elif cmd_result > 0:
-                reply_message = improper_params(cmd[0]) + admin_signature()
+                reply_message = improper_params(cmd[0])
             else:
                 code_to_exec = 'global reply_message; reply_message = ' + switch(ADMIN_REPLIES, '-1', cmd[0])
                 exec(code_to_exec, globals(), locals())
-                reply_message += admin_signature()
+        reply_message += admin_signature()
     msg.reply(reply_message)
     return
 
