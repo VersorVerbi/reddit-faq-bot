@@ -574,7 +574,7 @@ def initial_data_load(subreddit):
     return
 
 
-def get_stream() -> praw.models.util.stream_generator:
+def get_stream(**kwargs) -> praw.models.util.stream_generator:
     global r
     target_sub = r.subreddit(config.SUBREDDIT)
     results = []
