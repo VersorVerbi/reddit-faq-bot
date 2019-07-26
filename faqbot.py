@@ -89,7 +89,7 @@ def command_ok():
 def post_is_processed(post_id: str):
     global db
     cursor = db.cursor()
-    query = "SELECT isKwProcessed FROM faq_posts WHERE id=%(pid)s"
+    query = "SELECT isKwProcessed FROM posts WHERE id=%(pid)s"
     cursor.execute(query, {'pid': post_id})
     is_processed = cursor.fetchone().isKwProcessed > 0
     cursor.close()
