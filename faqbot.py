@@ -231,7 +231,7 @@ def invalid_command(cmd):
 def invalid_params(cmd):
     output = 'You entered `' + ' '.join(cmd) + '`.\n\n'
     output += 'You have entered invalid parameters for your command (alpha instead of numeric, for example). ' \
-           'Don\'t do that.'
+              'Don\'t do that.'
     return output
 
 
@@ -296,7 +296,7 @@ def test_results(pid_to_test):
 
 
 # region analysis functions
-def related_posts(post_id):  
+def related_posts(post_id):
     global db
     cursor = db.cursor()
     query = "SELECT relatedPosts(%(pid)s);"
