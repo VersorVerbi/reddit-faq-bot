@@ -620,14 +620,14 @@ def handle_command_message(msg):
         if cmd[0].upper() not in ADMIN_COMMANDS:
             reply_message = invalid_command(cmd[0])
         else:
-            code_to_exec = 'global cmd_result; cmd_result = ' + switch(ADMIN_COMMANDS, '-1', cmd[0])
+            code_to_exec = 'global cmd_result; cmd_result = ' + switch(ADMIN_COMMANDS, '-1', cmd[0].upper())
             exec(code_to_exec, globals(), locals())
             if cmd_result < 0:
                 reply_message = invalid_params(cmd)
             elif cmd_result > 0:
                 reply_message = improper_params(cmd[0])
             else:
-                code_to_exec = 'global reply_message; reply_message = ' + switch(ADMIN_REPLIES, '-1', cmd[0])
+                code_to_exec = 'global reply_message; reply_message = ' + switch(ADMIN_REPLIES, '-1', cmd[0].upper())
                 exec(code_to_exec, globals(), locals())
         reply_message += admin_signature()
     msg.reply(reply_message)
