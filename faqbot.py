@@ -675,6 +675,7 @@ r = praw.Reddit(user_agent=config.USER_AGENT, client_id=config.CLIENT_ID, client
 db = mysql.connector.connect(user=config.SQL_USER, password=config.SQL_PW, host=config.HOSTNAME,
                              database=config.SQL_DATABASE)
 if len(sys.argv) > 1:
+    fromCrash = (sys.argv[1] != 'initial')
     fullReset = (sys.argv[1] == 'reset')
 else:
     fromCrash = True
