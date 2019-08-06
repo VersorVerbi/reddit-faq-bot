@@ -104,6 +104,20 @@ def past_is_prologue():
     db.commit()
     cursor.close()
     return
+
+
+def execute_sql_file(filename):
+    global db
+    fd = open(filename, 'r')
+    file = fd.read()
+    fd.close()
+    commands = file.split(';')  # FIXME: how will this work with the function/procedures files?
+    for cmd in commands:
+        cursor = db.cursor()
+        cursor.execute(cmd)
+        db.commit()
+        cursor.close()
+    return
 # endregion
 
 
@@ -640,9 +654,33 @@ r = praw.Reddit(user_agent=config.USER_AGENT, client_id=config.CLIENT_ID, client
 db = mysql.connector.connect(user=config.SQL_USER, password=config.SQL_PW, host='localhost',
                              database=config.SQL_DATABASE)
 if len(sys.argv) > 1:
-    fromCrash = (sys.argv[1] != 'initial')
+    fullReset = (sys.argv[1] == 'reset')
 else:
     fromCrash = True
+    fullReset = False
+
+exists_cursor = db.cursor()
+exists_cursor.execute('SHOW TABLES LIKE %(tbl)s', {'tbl': 'keywords'})
+exists = exists_cursor.fetchone()
+if not exists:
+    fullReset = False
+    fromCrash = False
+    execute_sql_file('tables.sql')
+    execute_sql_file('procedures.sql')
+    execute_sql_file('functions.sql')
+exists_cursor.close()
+    
+if fullReset:
+    fromCrash = False
+    reset_cursor = db.cursor()
+    sql = "TRUNCATE keywords; TRUNCATE tokens;"
+    reset_cursor.execute(sql)
+    db.commit()
+    sql = "SELECT id FROM posts;"
+    reset_cursor.execute(sql)
+    for row in reset_cursor:
+        token_counting(r.submission(row[0]))
+    reset_cursor.close()
 
 nltk.download('words')
 english_vocab = set(w.lower() for w in nltk.corpus.words.words())
