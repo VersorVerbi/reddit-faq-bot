@@ -5,18 +5,16 @@ FAQ bot for the r/Catholicism subreddit
 ### On Reddit
 
 ### As an Administrator
-Run the program initially with `python faqbot.py initial` to do the first major download of historical posts on the subreddit.
+Run the program with `python faqbot.py` to create the tables in the database and do the first major download of historical posts on the subreddit. If the bot crashes during that initial load, run it again with `python faqbot.py initial` to get it to finish that first big chunk of data. All data loaded during the initial load is processed, but ignored (i.e., the bot will not reply to any posts until after the initial load).
 
-If the script crashes after that initial load is complete, you can restart it with just `python faqbot.py`. By default, any posts made in the intervening time will be ignored by the bot (i.e., they will be added to historical data, but the bot will not reply to them).
+If the script crashes after that initial load is complete, you can restart it with just `python faqbot.py`. Any posts made in the intervening time will be addressed as if they were brand-new (i.e., the bot will process them and respond to them as normal).
 
 ## How to Make Your Own for Another Subreddit
 Using config/constants.py.example, create your own constants.py file.
 
-Import functions.sql and procedures.sql into your SQL database.
+Put the repository in an appropriate folder on your server, where Python is installed. Make sure to include the SQL files.
 
-Put the repository in an appropriate folder on your server, where Python is installed.
-
-Use Python to run faqbot.py per instructions above.
+Use Python to run faqbot.py per instructions above. It will create the SQL tables for you.
 
 ## FAQ
 ### What version of Python is this compatible with?
