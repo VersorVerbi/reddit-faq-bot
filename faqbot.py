@@ -118,6 +118,26 @@ def execute_sql_file(filename):
         db.commit()
         cursor.close()
     return
+
+
+def update_setting(setting_name, setting_value):
+    global db
+    cursor = db.cursor()
+    sql = "UPDATE settings SET value = %(val)s WHERE descriptor = %(desc)s"
+    try:
+        cursor.execute(sql, {'val': setting_value, 'desc': setting_name})
+        success = 0
+    except mysql.connector.Error:
+        success = -2
+    db.commit()
+    cursor.close()
+    return success
+
+
+def reset_all_settings():
+    update_setting('numlinks', 5)
+    update_setting('numkeys', 5)
+    return
 # endregion
 
 
@@ -165,27 +185,23 @@ def remove_favorite(fav_to_remove):
 
 
 def update_numkeys(numkeys):
-    global db
     if numkeys is None:
         return -1
     elif not isinstance(numkeys, int):
         return -1
     elif numkeys <= 0:
         return 1
-    # TODO: add settings to database? then save this
-    return 0
-
+    return update_setting('numkeys', numkeys)
+    
 
 def update_numlinks(numlinks):
-    global db
     if numlinks is None:
         return -1
     elif not isinstance(numlinks, int):
         return -1
     elif numlinks <= 0:
         return 1
-    # TODO: add settings to database? then save this
-    return 0
+    return update_setting('numlinks', numlinks)
 
 
 def process_query(message):
@@ -260,6 +276,10 @@ def improper_params(cmd):
         output += 'number or one greater than 10 (>10). Please try again with an appropriate '
         output += 'number.'
     return output
+
+
+def sql_failure():
+    return 'Something went wrong with the SQL query. The command has not been processed. Please try again.'
 
 
 def quick_analytics():
@@ -405,7 +425,7 @@ def post_analysis_message(keyword_list, output_data):
 def process_comment(cmt):
     global subr
     global r
-    if 'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():
+    if 'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():  # no tag, so a private message
         if cmt.parent().author == r.redditor(config.REDDIT_USER):
             for mod in subr.moderator():
                 VALID_ADMINS.append(str(mod))
@@ -605,9 +625,8 @@ def get_stream(**kwargs) -> praw.models.util.stream_generator:
     results.extend(r.inbox.mentions())
     results.sort(key=lambda post: post.created_utc, reverse=True)
     return praw.models.util.stream_generator(lambda **kwargs: results, **kwargs)
-
-
 # endregion
+
 
 def handle_command_message(msg):
     global r, db, subr, cmd_result, reply_message
@@ -636,7 +655,9 @@ def handle_command_message(msg):
         else:
             code_to_exec = 'global cmd_result; cmd_result = ' + switch(ADMIN_COMMANDS, '-1', cmd[0].upper())
             exec(code_to_exec, globals(), locals())
-            if cmd_result < 0:
+            if cmd_result < -1:
+                reply_message = sql_failure()
+            elif cmd_result < 0:
                 reply_message = invalid_params(cmd)
             elif cmd_result > 0:
                 reply_message = improper_params(cmd[0])
@@ -651,7 +672,7 @@ def handle_command_message(msg):
 # main -----------------------------------
 r = praw.Reddit(user_agent=config.USER_AGENT, client_id=config.CLIENT_ID, client_secret=config.CLIENT_SECRET,
                 username=config.REDDIT_USER, password=config.REDDIT_PW)
-db = mysql.connector.connect(user=config.SQL_USER, password=config.SQL_PW, host='localhost',
+db = mysql.connector.connect(user=config.SQL_USER, password=config.SQL_PW, host=config.HOSTNAME,
                              database=config.SQL_DATABASE)
 if len(sys.argv) > 1:
     fullReset = (sys.argv[1] == 'reset')
@@ -668,19 +689,21 @@ if not exists:
     execute_sql_file('tables.sql')
     execute_sql_file('procedures.sql')
     execute_sql_file('functions.sql')
+    reset_all_settings()
 exists_cursor.close()
     
 if fullReset:
     fromCrash = False
     reset_cursor = db.cursor()
     sql = "TRUNCATE keywords; TRUNCATE tokens;"
-    reset_cursor.execute(sql)
+    reset_cursor.execute(sql, multi=True)
     db.commit()
     sql = "SELECT id FROM posts;"
     reset_cursor.execute(sql)
     for row in reset_cursor:
         token_counting(r.submission(row[0]))
     reset_cursor.close()
+    reset_all_settings()
 
 nltk.download('words')
 english_vocab = set(w.lower() for w in nltk.corpus.words.words())
