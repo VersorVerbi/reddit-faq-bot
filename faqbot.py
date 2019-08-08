@@ -6,68 +6,12 @@ import sys
 import traceback
 import nltk
 from config import constants as config
-
-
-# region enums
-ADMIN_COMMANDS = {
-    'DATA': 'command_ok()',
-    'HELP': 'command_ok()',
-    'MODFAVE': 'add_favorite(cmd[1])',
-    'MODUNFAVE': 'remove_favorite(cmd[1])',
-    'NUMKEYS': 'update_numkeys(cmd[1])',
-    'NUMLINKS': 'update_numlinks(cmd[1])',
-    'QUERY': 'process_query(msg)',
-    'REDUCEUNIQUENESS': 'ignore_token(cmd[1])',
-    'TEST': 'process_test(cmd[1])'
-}
-
-ADMIN_REPLIES = {
-    'DATA': 'quick_analytics()',
-    'HELP': 'help_text()',
-    'MODFAVE': 'favorite_added(cmd[1])',
-    'MODUNFAVE': 'favorite_removed(cmd[1])',
-    'NUMKEYS': 'new_numkeys(cmd[1])',
-    'NUMLINKS': 'new_numlinks(cmd[1])',
-    'QUERY': 'query_results()',
-    'REDUCEUNIQUENESS': 'token_ignored(cmd[1])',
-    'TEST': 'test_results(cmd[1])'
-}
-
-ADMIN_DESCRIPTIONS = {
-    'DATA': 'Return a high-level summary of the database and settings as they are now.',
-    'HELP': 'Return a list of functions, options, and behavior for admins.',
-    'MODFAVE id': 'Where `id` is the string immediately after `/comments/` in the URL of a thread, e.g., `cdgbpv`. Use '
-                  'this command to mark a particular thread as a moderator favorite. It will be set apart and '
-                  'highlighted whenever it scores highly in keyword matching. The quoted top comment will come from '
-                  'the most closely matched mod favorite thread instead of being pulled from all possible matches.',
-    'MODUNFAVE id': 'Where `id` is the string immediately after `/comments/` in the URL of a thread, e.g., `cdgbpv`. '
-                    'Use this command to **un**mark a particular thread as a moderator favorite. It will **no longer** '
-                    'be set apart and highlighted, but will appear normally whenever it scores highly in keyword '
-                    'matching. The quoted top comment will come from the most closely matched mod favorite thread '
-                    'instead of being pulled from all possible matches.',
-    'NUMKEYS #': 'Where `#` is a positive integer less than or equal to ten (<=10). Indicates the number of keywords to'
-                 ' use for thread matching. The default is 5.',
-    'NUMLINKS #': 'Where `#` is a positive integer less than or equal to ten (<=10). Indicates the maximum number of '
-                  'matching links to provide when responding to new posts.',
-    'QUERY': 'Where `QUERY` is the subject and your query is the body of the message; works exactly like non-'
-             'administrative users querying the bot.',
-    'REDUCEUNIQUENESS word': 'Where `word` is the word/token you want to reduce the influence of. This is appropriate '
-                             'only for obvious misspellings or otherwise rare (but irrelevant) words that, due to '
-                             'their uniqueness, score as keywords more often than they should. **THIS ACTION CANNOT '
-                             'BE REVERSED. PROCEED WITH CAUTION.**',
-    'TEST id': 'Where `id` is the string immediately after `/comments/` in the URL of a thread, e.g., `cdgbpv`. '
-               'Use this command to see (1) evaluated keywords and (2) related posts as determined by the bot. This '
-               'can be helpful for determining false positives, figuring out mod favorites, adding specific posts '
-               'to the database that may have ended up outside our initial queries, and improving the responses of '
-               'the bot in general.'
-}
-# endregion
+from config import faqhelper
 
 
 # region globals
 VALID_ADMINS: List[str] = [config.ADMIN_USER]
 reply_message: str = ''
-cmd_result: int = 0
 replacement: str = ''
 # endregion
 
@@ -124,14 +68,10 @@ def update_setting(setting_name, setting_value):
     global db
     cursor = db.cursor()
     sql = "REPLACE INTO settings (`descriptor`, `value`) VALUES (%(desc)s, %(val)s)"
-    try:
-        cursor.execute(sql, {'val': setting_value, 'desc': setting_name})
-        success = 0
-    except mysql.connector.Error:
-        success = -2
+    cursor.execute(sql, {'val': setting_value, 'desc': setting_name})
     db.commit()
     cursor.close()
-    return success
+    return 0
 
 
 def reset_all_settings():
@@ -145,16 +85,16 @@ def reset_all_settings():
 def add_favorite(new_favorite):
     global db, r
     if new_favorite is None:
-        return -1
+        raise faqhelper.MissingParameter
     elif r.submission(new_favorite) is None:
-        return 1
+        raise faqhelper.MismatchedParameter
     elif r.submission(new_favorite).subreddit.display_name != config.SUBREDDIT:
-        return 1
+        raise faqhelper.WrongSubreddit
     sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
     cursor = db.cursor()
     cursor.execute(sql, {'pid': new_favorite})
     if cursor.fetchone()[0] > 0:
-        return 1
+        raise faqhelper.IncorrectState
     cursor.fetchall()
     sql = 'UPDATE posts SET posts.modFavorite = 1 WHERE posts.id = %(pid)s'
     cursor.execute(sql, {'pid': new_favorite})
@@ -166,16 +106,16 @@ def add_favorite(new_favorite):
 def remove_favorite(fav_to_remove):
     global db, r
     if fav_to_remove is None:
-        return -1
+        raise faqhelper.MissingParameter
     elif r.submission(fav_to_remove) is None:
-        return 1
+        raise faqhelper.MismatchedParameter
     elif r.submission(fav_to_remove).subreddit.display_name != config.SUBREDDIT:
-        return 1
+        raise faqhelper.WrongSubreddit
     sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
     cursor = db.cursor()
     cursor.execute(sql, {'pid': fav_to_remove})
     if cursor.fetchone()[0] <= 0:
-        return 1
+        raise faqhelper.IncorrectState
     cursor.fetchall()
     sql = 'UPDATE posts SET posts.modFavorite = 0 WHERE posts.id = %(pid)s'
     cursor.execute(sql, {'pid': fav_to_remove})
@@ -186,32 +126,33 @@ def remove_favorite(fav_to_remove):
 
 def update_numkeys(numkeys):
     if numkeys is None:
-        return -1
+        raise faqhelper.MissingParameter
     elif not isinstance(numkeys, int):
-        return -1
+        raise faqhelper.MismatchedParameter
     elif numkeys <= 0:
-        return 1
+        raise faqhelper.BadParameter
     return update_setting('numkeys', numkeys)
     
 
 def update_numlinks(numlinks):
     if numlinks is None:
-        return -1
+        raise faqhelper.MissingParameter
     elif not isinstance(numlinks, int):
-        return -1
+        raise faqhelper.MismatchedParameter
     elif numlinks <= 0:
-        return 1
+        raise faqhelper.BadParameter
     return update_setting('numlinks', numlinks)
 
 
 def process_query(message):
+    # TODO: do this
     return 0
 
 
 def ignore_token(token):
     global db
     if token is None:
-        return -1
+        raise faqhelper.MissingParameter
     sql = 'UPDATE tokens SET tokens.document_count = tokens.document_count + 1000 WHERE tokens.token LIKE %(tok)s'
     cursor = db.cursor()
     cursor.execute(sql, {'tok': token})
@@ -221,6 +162,7 @@ def ignore_token(token):
 
 
 def process_test(pid_to_test):
+    # TODO: do this
     return 0
 # endregion
 
@@ -233,7 +175,7 @@ def admin_signature():
     output += ' it operates. Send a single command per message. (Every message will be interpeted'
     output += ' based on the first command parsed only.)\n\nEach of these commands is case-'
     output += 'insensitive:\n\n'
-    for cmd, desc in ADMIN_DESCRIPTIONS.items():
+    for cmd, desc in faqhelper.ADMIN_DESCRIPTIONS.items():
         output += '* `' + cmd + '`: ' + desc + '\n'
     output += '\nPlease send a message to /u/' + config.ADMIN_USER + ' with questions, comments, or bug reports.'
     return output
@@ -351,19 +293,23 @@ def post_keywords(post_id):
 
 
 def process_post(post):
-    global db, r, replacement
+    global db, r
     post_id = post.id
 
     # don't reply to mod posts or specified flaired posts or non-self-text posts
     if post.link_flair_text is not None:
         if post.link_flair_text.lower() in config.FLAIRS_TO_IGNORE:
-            return
+            raise faqhelper.IgnoredFlair
     if post.stickied or not post.is_self:
-        return
+        raise faqhelper.IncorrectPostType
 
     # if already processed, quit
     if post_is_processed(post_id):
-        return
+        raise faqhelper.AlreadyProcessed
+    
+    # if not even on our subreddit, ignore
+    if post.subreddit.display_name != config.SUBREDDIT:
+        raise faqhelper.WrongSubreddit
 
     token_counting(post)
     keyword_list: str = post_keywords(post_id)
@@ -629,7 +575,7 @@ def get_stream(**kwargs) -> praw.models.util.stream_generator:
 
 
 def handle_command_message(msg):
-    global r, db, subr, cmd_result, reply_message
+    global r, db, subr, reply_message
     for mod in subr.moderator():
         VALID_ADMINS.append(str(mod))
     if msg.author not in VALID_ADMINS:
@@ -648,22 +594,25 @@ def handle_command_message(msg):
         cmd = msg.subject.split()
         if cmd[0].upper() == 'QUERY':
             reply_message = handle_query(msg.body)
-        elif cmd[0].upper() not in ADMIN_COMMANDS:
+        elif cmd[0].upper() not in faqhelper.ADMIN_COMMANDS:
             cmd = msg.body.split()
-        if cmd[0].upper() not in ADMIN_COMMANDS:
+        if cmd[0].upper() not in faqhelper.ADMIN_COMMANDS:
             reply_message = invalid_command(cmd[0])
         else:
-            code_to_exec = 'global cmd_result; cmd_result = ' + switch(ADMIN_COMMANDS, '-1', cmd[0].upper())
-            exec(code_to_exec, globals(), locals())
-            if cmd_result < -1:
-                reply_message = sql_failure()
-            elif cmd_result < 0:
-                reply_message = invalid_params(cmd)
-            elif cmd_result > 0:
-                reply_message = improper_params(cmd[0])
-            else:
-                code_to_exec = 'global reply_message; reply_message = ' + switch(ADMIN_REPLIES, '-1', cmd[0].upper())
+            try:
+                code_to_exec = switch(faqhelper.ADMIN_COMMANDS, '-1', cmd[0].upper())
                 exec(code_to_exec, globals(), locals())
+            except mysql.connector.Error:
+                reply_message = sql_failure()
+                pass
+            except faqhelper.MissingParameter, faqhelper.MismatchedParameter:
+                reply_message = invalid_params(cmd)
+                pass
+            except faqhelper.BadParameter, faqhelper.IncorrectState, faqhelper.WrongSubreddit:
+                reply_message = improper_params(cmd[0])
+                pass
+            code_to_exec = 'global reply_message; reply_message = ' + switch(faqhelper.ADMIN_REPLIES, '-1', cmd[0].upper())
+            exec(code_to_exec, globals(), locals())
         reply_message += admin_signature()
     msg.reply(reply_message)
     return
@@ -718,7 +667,10 @@ try:
             if isinstance(caller, praw.models.Message):
                 handle_command_message(caller)
             elif isinstance(caller, praw.models.Submission):
-                process_post(caller)
+                try:
+                    process_post(caller)
+                except faqhelper.IgnoredFlair, faqhelper.IncorrectPostType, faqhelper.WrongSubreddit:
+                    pass
             else:
                 process_comment(caller)
             if len(VALID_ADMINS) > 1:
