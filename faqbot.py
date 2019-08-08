@@ -123,7 +123,7 @@ def execute_sql_file(filename):
 def update_setting(setting_name, setting_value):
     global db
     cursor = db.cursor()
-    sql = "UPDATE settings SET value = %(val)s WHERE descriptor = %(desc)s"
+    sql = "REPLACE INTO settings (`descriptor`, `value`) VALUES (%(desc)s, %(val)s)"
     try:
         cursor.execute(sql, {'val': setting_value, 'desc': setting_name})
         success = 0
