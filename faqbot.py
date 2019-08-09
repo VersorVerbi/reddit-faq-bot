@@ -643,47 +643,6 @@ def handle_command_message(msg):
     return
 
 
-# main -----------------------------------
-r = get_reddit()
-db = get_mysql_connection()
-
-if len(sys.argv) > 1:
-    fromCrash = (sys.argv[1] != 'initial')
-    fullReset = (sys.argv[1] == 'reset')
-else:
-    fromCrash = True
-    fullReset = False
-
-exists_cursor = db.cursor()
-exists_cursor.execute('SHOW TABLES LIKE %(tbl)s', {'tbl': 'keywords'})
-exists = exists_cursor.fetchone()
-if not exists:
-    fullReset = False
-    fromCrash = False
-    execute_sql_file('tables.sql')
-    execute_sql_file('procedures.sql')
-    execute_sql_file('functions.sql')
-    reset_all_settings()
-exists_cursor.close()
-    
-if fullReset:
-    fromCrash = False
-    reset_cursor = db.cursor()
-    sql = "TRUNCATE keywords; TRUNCATE tokens;"
-    reset_cursor.execute(sql, multi=True)
-    db.commit()
-    sql = "SELECT id FROM posts;"
-    reset_cursor.execute(sql)
-    for row in reset_cursor:
-        token_counting(r.submission(row[0]))
-    reset_cursor.close()
-    reset_all_settings()
-
-nltk.download('words')
-english_vocab = set(w.lower() for w in nltk.corpus.words.words())
-
-main_loop()
-
 def main_loop():
     global r, db
     try:
@@ -744,3 +703,45 @@ def main_loop():
         # DON'T PASS HERE -- we want uncaught exceptions to crash the bot and tell us
     main_loop()
     return
+
+
+# main -----------------------------------
+r = get_reddit()
+db = get_mysql_connection()
+
+if len(sys.argv) > 1:
+    fromCrash = (sys.argv[1] != 'initial')
+    fullReset = (sys.argv[1] == 'reset')
+else:
+    fromCrash = True
+    fullReset = False
+
+exists_cursor = db.cursor()
+exists_cursor.execute('SHOW TABLES LIKE %(tbl)s', {'tbl': 'keywords'})
+exists = exists_cursor.fetchone()
+if not exists:
+    fullReset = False
+    fromCrash = False
+    execute_sql_file('tables.sql')
+    execute_sql_file('procedures.sql')
+    execute_sql_file('functions.sql')
+    reset_all_settings()
+exists_cursor.close()
+    
+if fullReset:
+    fromCrash = False
+    reset_cursor = db.cursor()
+    sql = "TRUNCATE keywords; TRUNCATE tokens;"
+    reset_cursor.execute(sql, multi=True)
+    db.commit()
+    sql = "SELECT id FROM posts;"
+    reset_cursor.execute(sql)
+    for row in reset_cursor:
+        token_counting(r.submission(row[0]))
+    reset_cursor.close()
+    reset_all_settings()
+
+nltk.download('words')
+english_vocab = set(w.lower() for w in nltk.corpus.words.words())
+
+main_loop()
