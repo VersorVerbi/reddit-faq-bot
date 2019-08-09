@@ -605,10 +605,10 @@ def handle_command_message(msg):
             except mysql.connector.Error:
                 reply_message = sql_failure()
                 pass
-            except faqhelper.MissingParameter, faqhelper.MismatchedParameter:
+            except (faqhelper.MissingParameter, faqhelper.MismatchedParameter):
                 reply_message = invalid_params(cmd)
                 pass
-            except faqhelper.BadParameter, faqhelper.IncorrectState, faqhelper.WrongSubreddit:
+            except (faqhelper.BadParameter, faqhelper.IncorrectState, faqhelper.WrongSubreddit):
                 reply_message = improper_params(cmd[0])
                 pass
             code_to_exec = 'global reply_message; reply_message = ' + switch(faqhelper.ADMIN_REPLIES, '-1', cmd[0].upper())
@@ -669,7 +669,7 @@ try:
             elif isinstance(caller, praw.models.Submission):
                 try:
                     process_post(caller)
-                except faqhelper.IgnoredFlair, faqhelper.IncorrectPostType, faqhelper.WrongSubreddit:
+                except (faqhelper.IgnoredFlair, faqhelper.IncorrectPostType, faqhelper.WrongSubreddit):
                     pass
             else:
                 process_comment(caller)
