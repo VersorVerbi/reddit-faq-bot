@@ -493,10 +493,10 @@ def token_counting(post):
         cursor.execute(get_token, {'wrd': token})
         row = cursor.fetchone()
         # check for match
-        if cursor.rowcount <= 0:
-            make_new_word = token in english_vocab
-            if not make_new_word:
-                # if no match, get closestMatch()
+        make_new_word = (cursor.rowcount <= 0)
+        if make_new_word:  # no token found
+            make_new_word = token in english_vocab  # is the token an existing word
+            if not make_new_word:  # if the token does not exist in English, find its closest match
                 matched_token_set = cursor.callproc('closestMatch', (token, (0, 'CHAR'), 0, 0))
                 matched_token = matched_token_set[1]
                 matched_id = matched_token_set[2]
@@ -506,33 +506,31 @@ def token_counting(post):
                 # if length <= 3, only 100% is sufficient (won't this still cause bugs -- e.g., fig vs gif?)
                 # as length increases, required match decreases (+1/-5?)
                 required_match = max(1 - (0.05 * (token_length - 3)), 0.6)
-                print(matched_token_set)
-                if False:  # matched_proximity > required_match:
+                if matched_proximity > required_match:  # if the match is close enough, use it
                     new_token_id = matched_id
-                    # update tokens table
-                    add_to_tokens = "UPDATE tokens SET document_count = document_count + 1 WHERE id=%(tid)s"
-                    cursor.execute(add_to_tokens, {'tid': matched_id})
-                    db.commit()
-            else:
+                else:  # otherwise, we need to make a new word for this... whatever it is
+                    make_new_word = True
+            if make_new_word:  # the token was not in our database and either was in English or did not match anything closely
                 # add to tokens table
                 add_to_tokens = "INSERT IGNORE INTO tokens (token, document_count) VALUES (%(str)s, 1)"
                 cursor.execute(add_to_tokens, {'str': token})
                 db.commit()
                 new_token_id = cursor.lastrowid
-        else:
+        else:  # the token was found in the database already
             new_token_id = row[0]
+            
+        if not make_new_word:  # either the token was found initially or with a jaccard match
             # update tokens table
             add_to_tokens = "UPDATE tokens SET document_count = document_count + 1 WHERE id=%(tid)s"
             cursor.execute(add_to_tokens, {'tid': new_token_id})
             db.commit()
+            
         # add to keywords table
         add_to_keywords = "INSERT IGNORE INTO keywords (tokenId, postId, num_in_post) " \
                           "VALUES (%(tid)s, %(pid)s, %(count)s)"
         cursor.execute(add_to_keywords, {'tid': new_token_id, 'pid': post_id, 'count': count})
         db.commit()
         cursor.close()
-
-
 # endregion
 
 
