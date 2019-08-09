@@ -680,9 +680,8 @@ def main_loop():
         db = get_mysql_connection()
         pass
     except praw.exceptions.APIException as apie:
-        minutes_str = "".join(get_numbers(apie.message))
-        if len(minutes_str) > 0:
-            minutes = int(minutes_str)
+        if (apie.field.lower() == 'ratelimit'):
+            minutes = get_numbers(apie.message)[0]
             time.sleep(minutes * 60)
         else:
             r = None
