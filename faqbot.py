@@ -82,6 +82,9 @@ def reset_all_settings():
     update_setting('numlinks', 5)
     update_setting('numkeys', 5)
     return
+
+def post_from_our_subreddit(post):
+    return post.subreddit.display_name.lower() == config.SUBREDDIT.lower()
 # endregion
 
 
@@ -92,7 +95,7 @@ def add_favorite(new_favorite):
         raise faqhelper.MissingParameter
     elif r.submission(new_favorite) is None:
         raise faqhelper.MismatchedParameter
-    elif r.submission(new_favorite).subreddit.display_name != config.SUBREDDIT:
+    elif not post_from_our_subreddit(r.submission(new_favorite)):
         raise faqhelper.WrongSubreddit
     sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
     cursor = db.cursor()
@@ -113,7 +116,7 @@ def remove_favorite(fav_to_remove):
         raise faqhelper.MissingParameter
     elif r.submission(fav_to_remove) is None:
         raise faqhelper.MismatchedParameter
-    elif r.submission(fav_to_remove).subreddit.display_name != config.SUBREDDIT:
+    elif not post_from_our_subreddit(r.submission(fav_to_remove)):
         raise faqhelper.WrongSubreddit
     sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
     cursor = db.cursor()
@@ -309,7 +312,7 @@ def process_post(post):
         raise faqhelper.IncorrectPostType
     
     # if not even on our subreddit, ignore
-    if post.subreddit.display_name != config.SUBREDDIT:
+    if not post_from_our_subreddit(post):
         raise faqhelper.WrongSubreddit
 
     # if already processed, quit
