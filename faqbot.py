@@ -3,6 +3,7 @@ import praw
 import mysql.connector
 import re
 import sys
+import time
 import traceback
 import nltk
 from config import constants as config
@@ -96,6 +97,10 @@ def get_mysql_connection():
 def get_reddit():
     return praw.Reddit(user_agent=config.USER_AGENT, client_id=config.CLIENT_ID, client_secret=config.CLIENT_SECRET,
                        username=config.REDDIT_USER, password=config.REDDIT_PW)
+
+
+def get_numbers(string: str):
+    return [int(i) for i in string.split() if i.isdigit()]
 # endregion
 
 
@@ -713,7 +718,16 @@ def main_loop():
         db.close()
         db = get_mysql_connection()
         pass
-    except praw.exceptions.PRAWException:
+    except praw.exceptions.APIException as apie:
+        minutes_str = "".join(get_numbers(apie.message))
+        if len(minutes_str) > 0:
+            minutes = int(minutes_str)
+            time.sleep(minutes * 60)
+        else:
+            r = None
+            r = get_reddit()
+        pass
+    except praw.Exceptions.ClientException:
         r = None
         r = get_reddit()
         pass
