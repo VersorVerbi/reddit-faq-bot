@@ -324,7 +324,7 @@ def process_post(post):
     # we don't have to count this again if we already have
     cursor = db.cursor()
     cursor.execute("SELECT id FROM posts WHERE `id`=%(pid)s",{'pid': post_id})
-    row = cursor.fetch_one()
+    row = cursor.fetchone()
     if row is None:
         token_counting(post)
     cursor.close()
