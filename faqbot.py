@@ -335,6 +335,8 @@ def process_post(post):
                 output_data['top_cmt_votes'] = top_comment.score
                 output_data['top_cmt'] = top_comment
     reply_body = post_analysis_message(keyword_list, output_data)
+    # TESTING ONLY
+    reply_body = "Test reply for [" + post.title + "](" + post.permalink + ")\n\n------\n\n" + reply_body
     r.submission('co5du1').reply(reply_body); # test post for examining replies in public
     # TODO: do other stuff, like add a comment with links and a quote
     cursor = db.cursor()
