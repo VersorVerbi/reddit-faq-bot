@@ -324,6 +324,7 @@ def process_post(post):
     row = cursor.fetch_one()
     if row is None:
         token_counting(post)
+    cursor.close()
     keyword_list: str = post_keywords(post_id)
     list_of_related_posts: List[str] = related_posts(post_id)
     output_data: Dict[str, Union[Union[List[Any], int, praw.models.Comment], Any]] = {
@@ -683,7 +684,17 @@ try:
             elif isinstance(caller, praw.models.Submission):
                 try:
                     process_post(caller)
-                except (faqhelper.IgnoredFlair, faqhelper.IncorrectPostType, faqhelper.WrongSubreddit):
+                except faqhelper.IgnoredFlair:
+                    print("Ignored as free friday post")
+                    pass
+                except faqhelper.IncorrectPostType:
+                    print("Ignored as sticky or link")
+                    pass
+                except faqhelper.WrongSubreddit:
+                    print("Ignored as on wrong subreddit")
+                    pass
+                except faqhelper.AlreadyProcessed:
+                    print("Ignored as already processed")
                     pass
             else:
                 process_comment(caller)
