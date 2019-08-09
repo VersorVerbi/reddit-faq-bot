@@ -644,7 +644,7 @@ def handle_command_message(msg):
 
 
 # main -----------------------------------
-r = 
+r = get_reddit()
 db = get_mysql_connection()
 
 if len(sys.argv) > 1:
@@ -681,6 +681,8 @@ if fullReset:
 
 nltk.download('words')
 english_vocab = set(w.lower() for w in nltk.corpus.words.words())
+
+main_loop()
 
 def main_loop():
     global r, db
