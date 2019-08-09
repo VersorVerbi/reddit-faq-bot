@@ -299,6 +299,7 @@ def post_keywords(post_id):
 def process_post(post):
     global db, r
     post_id = post.id
+    print("Beginning processing for post %s" % (post_id))
 
     # don't reply to mod posts or specified flaired posts or non-self-text posts
     if post.link_flair_text is not None:
@@ -306,16 +307,23 @@ def process_post(post):
             raise faqhelper.IgnoredFlair
     if post.stickied or not post.is_self:
         raise faqhelper.IncorrectPostType
-
-    # if already processed, quit
-    if post_is_processed(post_id):
-        raise faqhelper.AlreadyProcessed
     
     # if not even on our subreddit, ignore
     if post.subreddit.display_name != config.SUBREDDIT:
         raise faqhelper.WrongSubreddit
 
-    token_counting(post)
+    # if already processed, quit
+    if post_is_processed(post_id):
+        raise faqhelper.AlreadyProcessed
+        
+    print("Processing necessary for post %s" % (post_id))
+
+    # we don't have to count this again if we already have
+    cursor = db.cursor()
+    cursor.execute("SELECT id FROM posts WHERE `id`=%(pid)s",{'pid': post_id})
+    row = cursor.fetch_one()
+    if row is None:
+        token_counting(post)
     keyword_list: str = post_keywords(post_id)
     list_of_related_posts: List[str] = related_posts(post_id)
     output_data: Dict[str, Union[Union[List[Any], int, praw.models.Comment], Any]] = {
