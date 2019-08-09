@@ -35,7 +35,11 @@ def post_is_processed(post_id: str):
     cursor = db.cursor()
     query = "SELECT isKwProcessed FROM posts WHERE id=%(pid)s"
     cursor.execute(query, {'pid': post_id})
-    is_processed = cursor.fetchone()[0] > 0
+    row = cursor.fetchone()
+    if row is not None:
+        is_processed = row[0] > 0
+    else:
+        is_processed = False
     cursor.close()
     return is_processed
 
