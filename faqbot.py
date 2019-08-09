@@ -83,8 +83,19 @@ def reset_all_settings():
     update_setting('numkeys', 5)
     return
 
+
 def post_from_our_subreddit(post):
     return post.subreddit.display_name.lower() == config.SUBREDDIT.lower()
+
+
+def get_mysql_connection():
+    return mysql.connector.connect(user=config.SQL_USER, password=config.SQL_PW, host=config.HOSTNAME,
+                                   database=config.SQL_DATABASE)
+
+
+def get_reddit():
+    return praw.Reddit(user_agent=config.USER_AGENT, client_id=config.CLIENT_ID, client_secret=config.CLIENT_SECRET,
+                       username=config.REDDIT_USER, password=config.REDDIT_PW)
 # endregion
 
 
@@ -628,10 +639,9 @@ def handle_command_message(msg):
 
 
 # main -----------------------------------
-r = praw.Reddit(user_agent=config.USER_AGENT, client_id=config.CLIENT_ID, client_secret=config.CLIENT_SECRET,
-                username=config.REDDIT_USER, password=config.REDDIT_PW)
-db = mysql.connector.connect(user=config.SQL_USER, password=config.SQL_PW, host=config.HOSTNAME,
-                             database=config.SQL_DATABASE)
+r = 
+db = get_mysql_connection()
+
 if len(sys.argv) > 1:
     fromCrash = (sys.argv[1] != 'initial')
     fullReset = (sys.argv[1] == 'reset')
@@ -667,41 +677,54 @@ if fullReset:
 nltk.download('words')
 english_vocab = set(w.lower() for w in nltk.corpus.words.words())
 
-try:
-    subr = r.subreddit(config.SUBREDDIT)
-    initial_data_load(subr)
-    while True:
-        callers = get_stream()
-        for caller in callers:
-            if isinstance(caller, praw.models.Message):
-                handle_command_message(caller)
-            elif isinstance(caller, praw.models.Submission):
-                try:
-                    process_post(caller)
-                except faqhelper.IgnoredFlair:
-                    print("Ignored as free friday post")
-                    pass
-                except faqhelper.IncorrectPostType:
-                    print("Ignored as sticky or link")
-                    pass
-                except faqhelper.WrongSubreddit:
-                    print("Ignored as on wrong subreddit")
-                    pass
-                except faqhelper.AlreadyProcessed:
-                    print("Ignored as already processed")
-                    pass
-            else:
-                process_comment(caller)
-            if len(VALID_ADMINS) > 1:
-                VALID_ADMINS.clear()
-                VALID_ADMINS.append(config.ADMIN_USER)
-            if isinstance(caller, praw.models.Message):
-                caller.delete()
-except Exception as e:
-    db.close()
-    err_data = sys.exc_info()
-    err_msg = str(err_data[1]) + '\n\n'  # error message
-    traces = traceback.format_list(traceback.extract_tb(err_data[2]))
-    for trace in traces:
-        err_msg += '    ' + trace + '\n'  # stack trace
-    r.redditor(config.ADMIN_USER).message('FAQ CRASH', err_msg)
+def main_loop():
+    global r, db
+    try:
+        subr = r.subreddit(config.SUBREDDIT)
+        initial_data_load(subr)
+        while True:
+            callers = get_stream()
+            for caller in callers:
+                if isinstance(caller, praw.models.Message):
+                    handle_command_message(caller)
+                elif isinstance(caller, praw.models.Submission):
+                    try:
+                        process_post(caller)
+                    except faqhelper.IgnoredFlair:
+                        print("Ignored as free friday post")
+                        pass
+                    except faqhelper.IncorrectPostType:
+                        print("Ignored as sticky or link")
+                        pass
+                    except faqhelper.WrongSubreddit:
+                        print("Ignored as on wrong subreddit")
+                        pass
+                    except faqhelper.AlreadyProcessed:
+                        print("Ignored as already processed")
+                        pass
+                else:
+                    process_comment(caller)
+                if len(VALID_ADMINS) > 1:
+                    VALID_ADMINS.clear()
+                    VALID_ADMINS.append(config.ADMIN_USER)
+                if isinstance(caller, praw.models.Message):
+                    caller.delete()
+    except mysql.connector.OperationalError:
+        db.close()
+        db = get_mysql_connection()
+        pass
+    except praw.exceptions.PRAWException:
+        r = None
+        r = get_reddit()
+        pass
+    except Exception as e:
+        db.close()
+        err_data = sys.exc_info()
+        err_msg = str(err_data[1]) + '\n\n'  # error message
+        traces = traceback.format_list(traceback.extract_tb(err_data[2]))
+        for trace in traces:
+            err_msg += '    ' + trace + '\n'  # stack trace
+        r.redditor(config.ADMIN_USER).message('FAQ CRASH', err_msg)
+        # DON'T PASS HERE -- we want uncaught exceptions to crash the bot and tell us
+    main_loop()
+    return
