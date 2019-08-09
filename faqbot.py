@@ -428,14 +428,14 @@ def token_counting(post):
     # we want to replace these characters with spaces so that words separated by only a slash, dash, line break, etc.,
     # aren't smushed together
     replacement = ' '
-    replace_pattern = r'[^a-zà-öø-ÿ\'’ ]'  # get rid of non-alpha, non-space characters
+    replace_pattern = r'[^0-9a-zà-öø-ÿ\'’ ]'  # get rid of non-alpha, non-space characters
     post_text = re.sub(replace_pattern, remove_nonalpha, post_text)
     post_title = re.sub(replace_pattern, remove_nonalpha, post_title)
     # this regex is the same as the last one minus the apostrophe
     # we want to replace apostrophes with nothing to minimize the effect of the ridiculously inordinate amount of
     # apostrophe-based typos in the world
     replacement = ''
-    replace_pattern = r'[^a-zà-öø-ÿ ]'
+    replace_pattern = r'[^0-9a-zà-öø-ÿ ]'
     post_text = re.sub(replace_pattern, remove_nonalpha, post_text)
     post_title = re.sub(replace_pattern, remove_nonalpha, post_title)
     # now split the strings by spaces and combine them into a single array
