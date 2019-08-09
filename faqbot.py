@@ -477,41 +477,32 @@ def token_counting(post):
         cursor.execute(get_token, {'wrd': token})
         row = cursor.fetchone()
         # check for match
-        # print ('  ',cursor.rowcount)
         if cursor.rowcount <= 0:
-            if token in english_vocab:
-                pass
-                # assume it's good and add it
-                # TODO: go to add
+            make_new_word = token in english_vocab
+            if not make_new_word:
+                # if no match, get closestMatch()
+                matched_token_set = cursor.callproc('closestMatch', (token, (0, 'CHAR'), 0, 0))
+                matched_token = matched_token_set[1]
+                matched_id = matched_token_set[2]
+                matched_proximity = matched_token_set[3]
+                # if match is insufficient, add it to the token table
+                token_length = len(token)
+                # if length <= 3, only 100% is sufficient (won't this still cause bugs -- e.g., fig vs gif?)
+                # as length increases, required match decreases (+1/-5?)
+                required_match = max(1 - (0.05 * (token_length - 3)), 0.6)
+                print(matched_token_set)
+                if False:  # matched_proximity > required_match:
+                    new_token_id = matched_id
+                    # update tokens table
+                    add_to_tokens = "UPDATE tokens SET document_count = document_count + 1 WHERE id=%(tid)s"
+                    cursor.execute(add_to_tokens, {'tid': matched_id})
+                    db.commit()
             else:
-                pass
-                # assume it's a typo and try to find it with Jaccard scoring
-                # if score = good
-                # else add it anyway
-            # if no match, get closestMatch()
-            # matched_token_set = cursor.callproc('closestMatch', (token, (0, 'CHAR'), 0, 0))
-            # matched_token = matched_token_set[1]
-            # matched_id = matched_token_set[2]
-            # matched_proximity = matched_token_set[3]
-            # if match is insufficient, add it to the token table
-            # token_length = len(token)
-            # if length <= 3, only 100% is sufficient (won't this still cause bugs -- e.g., fig vs gif?)
-            # as length increases, required match decreases (+1/-5?)
-            # required_match = max(1 - (0.05 * (token_length - 3)), 0.6)
-            # print(matched_token_set)
-            # if False:  # matched_proximity > required_match:
-            #    new_token_id = matched_id
-            #    # update tokens table
-            #    add_to_tokens = "UPDATE tokens SET document_count = document_count + 1 WHERE id=%(tid)s"
-            #    cursor.execute(add_to_tokens, {'tid': matched_id})
-            #    db.commit()
-            # else:
-            # print('new token!')
-            # add to tokens table
-            add_to_tokens = "INSERT IGNORE INTO tokens (token, document_count) VALUES (%(str)s, 1)"
-            cursor.execute(add_to_tokens, {'str': token})
-            db.commit()
-            new_token_id = cursor.lastrowid
+                # add to tokens table
+                add_to_tokens = "INSERT IGNORE INTO tokens (token, document_count) VALUES (%(str)s, 1)"
+                cursor.execute(add_to_tokens, {'str': token})
+                db.commit()
+                new_token_id = cursor.lastrowid
         else:
             new_token_id = row[0]
             # update tokens table
