@@ -335,7 +335,7 @@ def process_post(post):
                 output_data['top_cmt_votes'] = top_comment.score
                 output_data['top_cmt'] = top_comment
     reply_body = post_analysis_message(keyword_list, output_data)
-    r.redditor(config.ADMIN_USER).message('Reply test: ' + post_id, reply_body)
+    r.submission('co5du1').reply(reply_body); # test post for examining replies in public
     # TODO: do other stuff, like add a comment with links and a quote
     cursor = db.cursor()
     sql = 'UPDATE posts SET isKwProcessed = 1 WHERE id = %(pid)s;'
