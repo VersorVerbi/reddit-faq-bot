@@ -685,7 +685,7 @@ def main_loop():
             r = None
             r = get_reddit()
         pass
-    except praw.Exceptions.ClientException:
+    except praw.exceptions.ClientException:
         r = None
         r = get_reddit()
         pass
