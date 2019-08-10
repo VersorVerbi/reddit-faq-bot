@@ -10,3 +10,4 @@ SUBREDDIT = '[the name of the subreddit the FAQ bot is for]'
 ADMIN_USER = '[your username (for contact purposes)]'
 BOT_NAME = '[name of the bot for display purposes]'
 FLAIRS_TO_IGNORE = ['[lower-case]','[list]','[of]','[text]','[flairs]','[to]','[ignore]']
+HOSTNAME = 'localhost'  # you might need to change this if you don't run the bot on the server where the SQL database lives
