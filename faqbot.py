@@ -188,11 +188,6 @@ def ignore_token(token):
     db.commit()
     cursor.close()
     return 0
-
-
-def process_test(pid_to_test):
-    # TODO: do this
-    return 0
 # endregion
 
 
@@ -265,22 +260,24 @@ def help_text():
 
 
 def favorite_added(new_favorite):
-    message = ''
+    message = 'You have added the new favorite post ' + new_favorite + '. It will now be highlighted'
+    message += ' separately from other posts when it is included in a response.'
     return message
 
 
 def favorite_removed(fav_to_remove):
-    message = ''
+    message = 'You have removed the favorite post ' + fav_to_remove + '. It will no longer be '
+    message += 'highlighted separately from other posts when it is included in a response.'
     return message
 
 
 def new_numkeys(numkeys):
-    message = ''
+    message = 'The number of keywords identified by the bot is now ' + str(numkeys) + '.'
     return message
 
 
 def new_numlinks(numlinks):
-    message = ''
+    message = 'The number of links returned by the bot is now ' + str(numlinks) + '.'
     return message
 
 
@@ -290,12 +287,23 @@ def query_results():
 
 
 def token_ignored(token):
-    message = ''
+    message = 'The word \'' + token + '\' is now considered less important by the bot. This action cannot be reversed.'
     return message
 
 
 def test_results(pid_to_test):
-    message = ''
+    global r
+    try:
+        message = process_post(r.submission(pid_to_test), False, True)
+    except faqhelper.IgnoredFlair:
+        message = "Post %s has a flair that is set to be ignored." % pid_to_test
+        pass
+    except faqhelper.IncorrectPostType:
+        message = "Post %s is a stickied post or a link post, so it is set to be ignored." % pid_to_test
+        pass
+    except faqhelper.WrongSubreddit:
+        message = "Post %s is not on the r/%s subreddit." % (pid_to_test, config.SUBREDDIT)
+        pass
     return message
 # endregion
 
@@ -306,9 +314,9 @@ def related_posts(post_id):
     cursor = db.cursor()
     query = "SELECT relatedPosts(%(pid)s);"
     cursor.execute(query, {'pid': post_id})
-    row = cursor.fetchone()
+    related = cursor.fetchone()
     cursor.close()
-    return row[0].split(',')
+    return related[0].split(',')
 
 
 def post_keywords(post_id):
@@ -316,15 +324,15 @@ def post_keywords(post_id):
     cursor = db.cursor()
     query = "SELECT keywordList(%(pid)s);"
     cursor.execute(query, {'pid': post_id})
-    row = cursor.fetchone()
+    keywords = cursor.fetchone()
     cursor.close()
-    return row[0]
+    return keywords[0]
 
 
-def process_post(post):
+def process_post(post: praw.models.Submission, reply_to_thread: bool = True, reprocess: bool = False):
     global db, r
     post_id = post.id
-    print("Beginning processing for post %s" % (post_id))
+    print("Beginning processing for post %s" % post_id)
 
     # don't reply to mod posts or specified flaired posts or non-self-text posts
     if post.link_flair_text is not None:
@@ -338,8 +346,9 @@ def process_post(post):
         raise faqhelper.WrongSubreddit
 
     # if already processed, quit
-    if post_is_processed(post_id):
-        raise faqhelper.AlreadyProcessed
+    if not reprocess:
+        if post_is_processed(post_id):
+            raise faqhelper.AlreadyProcessed
         
     print("Processing necessary for post %s" % post_id)
 
@@ -376,16 +385,17 @@ def process_post(post):
                 output_data['top_cmt_votes'] = top_comment.score
                 output_data['top_cmt'] = top_comment
     reply_body = post_analysis_message(keyword_list, output_data)
-    # TESTING ONLY
-    reply_body = "Test reply for [" + post.title + "](" + post.permalink + ")\n\n------\n\n" + reply_body
-    r.submission('co5du1').reply(reply_body)  # test post for examining replies in public
-    # TODO: do other stuff, like add a comment with links and a quote
+    if reply_to_thread:
+        # TESTING ONLY
+        reply_body = "Test reply for [%s](%s)\n\n------\n\n%s" % (post.title, post.permalink, reply_body)
+        r.submission('co5du1').reply(reply_body)  # test post for examining replies in public
+        # TODO: do other stuff, like add a comment with links and a quote
     cursor = db.cursor()
     update_sql = 'UPDATE posts SET isKwProcessed = 1 WHERE id = %(pid)s;'
     cursor.execute(update_sql, {'pid': post_id})
     db.commit()
     cursor.close()
-    return
+    return reply_body
 
 
 def post_analysis_message(keyword_list, output_data):
@@ -414,13 +424,14 @@ def post_analysis_message(keyword_list, output_data):
 def process_comment(cmt):
     global subr
     global r
-    if 'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():  # no tag, so a private message
+    if 'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():  # no tag, so a comment reply
         if cmt.parent().author == r.redditor(config.REDDIT_USER):
             for mod in subr.moderator():
                 VALID_ADMINS.append(str(mod))
             if cmt.author == cmt.parent().parent().author or cmt.author in VALID_ADMINS:
                 if cmt.body.lower() == 'delete':
                     cmt.parent().delete()
+        # TODO: determine if this or downvote system is better
     else:  # we have been summoned
         pass  # TODO: handle a comment
     return
@@ -449,41 +460,14 @@ def retrieve_token_counts(submissions):
         cursor.close()
         # otherwise, count the tokens
         token_counting(post)
-        # TODO: mark initial-load posts as processed to prevent later processing
     return
 
 
 def token_counting(post):
-    global db, replacement, english_vocab
+    global db, english_vocab
     # get post text data
     post_id = post.id
-    post_title = post.title
-    post_text = post.selftext
-    # this regex finds "http" followed by an unknown number of letters and not-letters until, looking ahead, we see a
-    # closing parenthesis, a horizontal space, or a vertical space
-    # we want to replace links with nothing so that they don't mess with our word analysis
-    replacement = ''
-    replace_pattern = r'http(\w|\W)+?(?=\)| |\t|\v|$)'
-    post_text = re.sub(replace_pattern, remove_nonalpha, post_text.lower())
-    post_title = re.sub(replace_pattern, remove_nonalpha, post_title.lower())
-    # this regex finds any character that is NOT lowercase a-z or diacritically marked variants of the same or an
-    # apostrophe or a space
-    # we want to replace these characters with spaces so that words separated by only a slash, dash, line break, etc.,
-    # aren't smushed together
-    replacement = ' '
-    replace_pattern = r'[^0-9a-zà-öø-ÿ\'’ ]'  # get rid of non-alpha, non-space characters
-    post_text = re.sub(replace_pattern, remove_nonalpha, post_text)
-    post_title = re.sub(replace_pattern, remove_nonalpha, post_title)
-    # this regex is the same as the last one minus the apostrophe
-    # we want to replace apostrophes with nothing to minimize the effect of the ridiculously inordinate amount of
-    # apostrophe-based typos in the world
-    replacement = ''
-    replace_pattern = r'[^0-9a-zà-öø-ÿ ]'
-    post_text = re.sub(replace_pattern, remove_nonalpha, post_text)
-    post_title = re.sub(replace_pattern, remove_nonalpha, post_title)
-    # now split the strings by spaces and combine them into a single array
-    text_array = post_title.split() + post_text.split()
-    text_set = set(text_array)  # gets only one instance of each unique token
+    post_title, text_array, text_set = prepare_post_text(post)
     # add post_id to posts SQL table (have to do this first so foreign keys in other SQL tables don't complain)
     cursor = db.cursor()
     add_to_posts = "INSERT IGNORE INTO posts (id) VALUES (%(pid)s)"
@@ -541,6 +525,38 @@ def token_counting(post):
         cursor.execute(add_to_keywords, {'tid': new_token_id, 'pid': post_id, 'count': count})
         db.commit()
         cursor.close()
+
+
+def prepare_post_text(post):
+    global replacement
+    post_title = post.title
+    post_text = post.selftext
+    # this regex finds "http" followed by an unknown number of letters and not-letters until, looking ahead, we see a
+    # closing parenthesis, a horizontal space, or a vertical space
+    # we want to replace links with nothing so that they don't mess with our word analysis
+    replacement = ''
+    replace_pattern = r'http(\w|\W)+?(?=\)| |\t|\v|$)'
+    post_text = re.sub(replace_pattern, remove_nonalpha, post_text.lower())
+    post_title = re.sub(replace_pattern, remove_nonalpha, post_title.lower())
+    # this regex finds any character that is NOT lowercase a-z or diacritically marked variants of the same or an
+    # apostrophe or a space
+    # we want to replace these characters with spaces so that words separated by only a slash, dash, line break, etc.,
+    # aren't smushed together
+    replacement = ' '
+    replace_pattern = r'[^0-9a-zà-öø-ÿ\'’ ]'  # get rid of non-alpha, non-space characters
+    post_text = re.sub(replace_pattern, remove_nonalpha, post_text)
+    post_title = re.sub(replace_pattern, remove_nonalpha, post_title)
+    # this regex is the same as the last one minus the apostrophe
+    # we want to replace apostrophes with nothing to minimize the effect of the ridiculously inordinate amount of
+    # apostrophe-based typos in the world
+    replacement = ''
+    replace_pattern = r'[^0-9a-zà-öø-ÿ ]'
+    post_text = re.sub(replace_pattern, remove_nonalpha, post_text)
+    post_title = re.sub(replace_pattern, remove_nonalpha, post_title)
+    # now split the strings by spaces and combine them into a single array
+    text_array = post_title.split() + post_text.split()
+    text_set = set(text_array)  # gets only one instance of each unique token
+    return post_title, text_array, text_set
 # endregion
 
 

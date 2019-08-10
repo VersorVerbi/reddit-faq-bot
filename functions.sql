@@ -2,8 +2,10 @@ CREATE FUNCTION `keywordList`(`postQid` INT) RETURNS varchar(2560) CHARSET utf8m
 BEGIN
   DECLARE finished BIT DEFAULT 0;
   DECLARE keyword INT DEFAULT 0;
+  DECLARE keyLimit INT DEFAULT 5;
   DECLARE keyword_cursor CURSOR FOR SELECT keywords.tokenId FROM keywords WHERE keywords.postId = postQid;
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
+  SET keyLimit = SELECT `value` FROM settings WHERE `descriptor` = "numkeys";
   OPEN keyword_cursor;
   DROP TEMPORARY TABLE IF EXISTS document_keywords;
   CREATE TEMPORARY TABLE document_keywords (tokenID int, tfIdf float);
@@ -40,8 +42,10 @@ CREATE FUNCTION `tokenList`(`postQid` VARCHAR(20)) RETURNS varchar(2560) CHARSET
 BEGIN
   DECLARE finished BIT DEFAULT 0;
   DECLARE keyword INT DEFAULT 0;
+  DECLARE keyLimit INT DEFAULT 5;
   DECLARE keyword_cursor CURSOR FOR SELECT keywords.tokenId FROM keywords WHERE keywords.postId = postQid;
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
+  SET keyLimit = SELECT `value` FROM settings WHERE `descriptor` = "numkeys";
   OPEN keyword_cursor;
   DROP TEMPORARY TABLE IF EXISTS document_keywords;
   CREATE TEMPORARY TABLE document_keywords (tokenID int, tfIdf float);
@@ -114,11 +118,27 @@ RETURN
             LIMIT 1)
     ))
 
+CREATE FUNCTION `queryTfIdf`(`tokenQid` INT) RETURNS FLOAT
+RETURN (LOG10(1 + (SELECT COUNT(*) FROM posts) / (SELECT tokens.document_count FROM tokens WHERE tokens.id = tokenQid)))
+
+CREATE FUNCTION `queryTokens`(`query` VARCHAR(2560)) RETURNS VARCHAR(200)
+BEGIN
+
+END
+
+CREATE FUNCTION `queryPosts`(`query` VARCHAR(2560)) RETURNS VARCHAR(200)
+BEGIN
+    DECLARE linkLimit INT DEFAULT 5;
+
+END
+
 CREATE FUNCTION `relatedPosts`(`postQid` VARCHAR(20)) RETURNS varchar(200) CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci
 BEGIN
     DECLARE numTokens INT DEFAULT 0;
     DECLARE postList VARCHAR(200) DEFAULT "";
     DECLARE sourceList VARCHAR(200) DEFAULT "";
+    DECLARE linkLimit INT DEFAULT 5;
+    SET linkLimit = SELECT `value` FROM settings WHERE `descriptor` = "numlinks";
     SET sourceList = tokenList(postQid);
     SET numTokens = LENGTH(sourceList) - LENGTH(REPLACE(sourceList,',','')) + 1;
     SET @myNum = numTokens;
@@ -143,7 +163,7 @@ BEGIN
 
     UPDATE related_posts SET tfIdf = 0 WHERE tfIdf = NULL;
 
-    SELECT GROUP_CONCAT(pid SEPARATOR ',') INTO postList FROM (SELECT pid, AVG(tfIdf) as tfIdfAvg FROM related_posts WHERE pid != postQid GROUP BY pid ORDER BY tfIdfAvg DESC LIMIT 5) AS top_five;
+    SELECT GROUP_CONCAT(pid SEPARATOR ',') INTO postList FROM (SELECT pid, AVG(tfIdf) as tfIdfAvg FROM related_posts WHERE pid != postQid GROUP BY pid ORDER BY tfIdfAvg DESC LIMIT linkLimit) AS top_five;
 	DROP TEMPORARY TABLE source_tokens;
     DROP TEMPORARY TABLE related_posts;
     RETURN postList;

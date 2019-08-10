@@ -6,9 +6,9 @@ ADMIN_COMMANDS = {
     'MODUNFAVE': 'remove_favorite(cmd[1])',
     'NUMKEYS': 'update_numkeys(cmd[1])',
     'NUMLINKS': 'update_numlinks(cmd[1])',
-    'QUERY': 'process_query(msg)',
+    'QUERY': 'command_ok()',
     'REDUCEUNIQUENESS': 'ignore_token(cmd[1])',
-    'TEST': 'process_test(cmd[1])'
+    'TEST': 'command_ok()'
 }
 
 ADMIN_REPLIES = {
@@ -18,7 +18,7 @@ ADMIN_REPLIES = {
     'MODUNFAVE': 'favorite_removed(cmd[1])',
     'NUMKEYS': 'new_numkeys(cmd[1])',
     'NUMLINKS': 'new_numlinks(cmd[1])',
-    'QUERY': 'query_results()',
+    'QUERY': 'query_results(msg)',
     'REDUCEUNIQUENESS': 'token_ignored(cmd[1])',
     'TEST': 'test_results(cmd[1])'
 }
