@@ -101,6 +101,19 @@ RETURN
             LIMIT 1)
     ))
 
+CREATE FUNCTION `tfIdfLog`(`tokenQid` INT, `postQid` VARCHAR(20)) RETURNS float
+RETURN
+    (LOG10(1 + (SELECT num_in_post FROM keywords WHERE keywords.tokenId = tokenQid AND keywords.postId = postQid LIMIT 1)))
+    *
+    (LOG10(
+        (SELECT COUNT(*) FROM posts)
+        /
+        (SELECT tokens.document_count
+            FROM tokens
+            WHERE tokens.id = tokenQid
+            LIMIT 1)
+    ))
+
 CREATE FUNCTION `relatedPosts`(`postQid` VARCHAR(20)) RETURNS varchar(200) CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci
 BEGIN
     DECLARE numTokens INT DEFAULT 0;
@@ -123,10 +136,12 @@ BEGIN
     CREATE TEMPORARY TABLE related_posts (pid VARCHAR(20), tid INT, tfIdf FLOAT);
 
     INSERT INTO related_posts
-        SELECT keywords.postID, keywords.tokenID, tfIdfScore(keywords.tokenID, keywords.postID) AS tfIdf
+        SELECT keywords.postID, keywords.tokenID, tfIdfLog(keywords.tokenID, keywords.postID) AS tfIdf
         FROM keywords
         WHERE keywords.tokenID IN
                 (SELECT tid FROM source_tokens AS source_token_list);
+
+    UPDATE related_posts SET tfIdf = 0 WHERE tfIdf = NULL;
 
     SELECT GROUP_CONCAT(pid SEPARATOR ',') INTO postList FROM (SELECT pid, AVG(tfIdf) as tfIdfAvg FROM related_posts WHERE pid != postQid GROUP BY pid ORDER BY tfIdfAvg DESC LIMIT 5) AS top_five;
 	DROP TEMPORARY TABLE source_tokens;

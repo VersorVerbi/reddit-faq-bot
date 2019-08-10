@@ -96,6 +96,11 @@ def post_is_processed(post_id: str):
     return is_processed
 
 
+def is_link_only(body):
+    link_pattern = r'^http(\w|\W)+?$'
+    return re.search(link_pattern, body)
+
+
 def past_is_prologue():
     global db
     cursor = db.cursor()
@@ -344,8 +349,11 @@ def process_post(post):
         thread: praw.models.Submission = r.submission(pid)
         thread.comment_sort = 'confidence'
         if len(thread.comments) > 0:
-            top_comment: praw.models.Comment = thread.comments[0]
-            # TODO: skip deleted comments and get next top comment
+            i = 0
+            top_comment: praw.models.Comment = thread.comments[i]
+            while top_comment.author is None or top_comment.banned_by is not None:
+                i += 1
+                top_comment = thread.comments[i]
         else:
             top_comment = None
         output_data['title'].append(thread.title)
@@ -412,7 +420,7 @@ def retrieve_token_counts(submissions):
     global db
     for post in submissions:
         # "gilded" returns both comments and submissions, so exclude the comments
-        if not isinstance(post, praw.models.Submission) or not post.is_self:
+        if not isinstance(post, praw.models.Submission) or not post.is_self or is_link_only(post.selftext):
             continue
         post_id = post.id
         # if in posts SQL table already, do nothing
@@ -440,7 +448,7 @@ def token_counting(post):
     # closing parenthesis, a horizontal space, or a vertical space
     # we want to replace links with nothing so that they don't mess with our word analysis
     replacement = ''
-    replace_pattern = r'http(\w|\W)+?(?=\)| |\t|\v)'
+    replace_pattern = r'http(\w|\W)+?(?=\)| |\t|\v|$)'
     post_text = re.sub(replace_pattern, remove_nonalpha, post_text.lower())
     post_title = re.sub(replace_pattern, remove_nonalpha, post_title.lower())
     # this regex finds any character that is NOT lowercase a-z or diacritically marked variants of the same or an
@@ -448,14 +456,14 @@ def token_counting(post):
     # we want to replace these characters with spaces so that words separated by only a slash, dash, line break, etc.,
     # aren't smushed together
     replacement = ' '
-    replace_pattern = r'[^a-zà-öø-ÿ\'’ ]'  # get rid of non-alpha, non-space characters
+    replace_pattern = r'[^0-9a-zà-öø-ÿ\'’ ]'  # get rid of non-alpha, non-space characters
     post_text = re.sub(replace_pattern, remove_nonalpha, post_text)
     post_title = re.sub(replace_pattern, remove_nonalpha, post_title)
     # this regex is the same as the last one minus the apostrophe
     # we want to replace apostrophes with nothing to minimize the effect of the ridiculously inordinate amount of
     # apostrophe-based typos in the world
     replacement = ''
-    replace_pattern = r'[^a-zà-öø-ÿ ]'
+    replace_pattern = r'[^0-9a-zà-öø-ÿ ]'
     post_text = re.sub(replace_pattern, remove_nonalpha, post_text)
     post_title = re.sub(replace_pattern, remove_nonalpha, post_title)
     # now split the strings by spaces and combine them into a single array
@@ -591,9 +599,8 @@ def get_stream(**kwargs) -> praw.models.util.stream_generator:
     results.extend(r.inbox.mentions())
     results.sort(key=lambda post: post.created_utc, reverse=True)
     return praw.models.util.stream_generator(lambda **kwargs: results, **kwargs)
-
-
 # endregion
+
 
 def handle_command_message(msg):
     global r, db, subr, cmd_result, reply_message
