@@ -298,6 +298,9 @@ def test_results(pid_to_test):
     except faqhelper.IgnoredFlair:
         message = "Post %s has a flair that is set to be ignored." % pid_to_test
         pass
+    except faqhelper.IgnoredTitle:
+        message = "Post %s has text in the title that is set to be ignored." % pid_to_test
+        pass
     except faqhelper.IncorrectPostType:
         message = "Post %s is a stickied post or a link post, so it is set to be ignored." % pid_to_test
         pass
@@ -706,7 +709,10 @@ def main_loop():
                     try:
                         process_post(caller)
                     except faqhelper.IgnoredFlair:
-                        print("Ignored as free friday post")
+                        print("Ignored by flair")
+                        pass
+                    except faqhelper.IgnoredTitle:
+                        print("Ignored by title")
                         pass
                     except faqhelper.IncorrectPostType:
                         print("Ignored as sticky or link")
