@@ -14,6 +14,7 @@ from config import faqhelper
 VALID_ADMINS: List[str] = [config.ADMIN_USER]
 reply_message: str = ''
 replacement: str = ''
+subr: praw.subreddit = None
 # endregion
 
 
@@ -36,9 +37,9 @@ def post_is_processed(post_id: str):
     cursor = db.cursor()
     query = "SELECT isKwProcessed FROM posts WHERE id=%(pid)s"
     cursor.execute(query, {'pid': post_id})
-    row = cursor.fetchone()
-    if row is not None:
-        is_processed = row[0] > 0
+    process_row = cursor.fetchone()
+    if process_row is not None:
+        is_processed = process_row[0] > 0
     else:
         is_processed = False
     cursor.close()
@@ -77,8 +78,8 @@ def execute_sql_file(filename):
 def update_setting(setting_name, setting_value):
     global db
     cursor = db.cursor()
-    sql = "REPLACE INTO settings (`descriptor`, `value`) VALUES (%(desc)s, %(val)s)"
-    cursor.execute(sql, {'val': setting_value, 'desc': setting_name})
+    update_sql = "REPLACE INTO settings (`descriptor`, `value`) VALUES (%(desc)s, %(val)s)"
+    cursor.execute(update_sql, {'val': setting_value, 'desc': setting_name})
     db.commit()
     cursor.close()
     return 0
@@ -118,14 +119,14 @@ def add_favorite(new_favorite):
         raise faqhelper.MismatchedParameter
     elif not post_from_our_subreddit(r.submission(new_favorite)):
         raise faqhelper.WrongSubreddit
-    sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
+    add_sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
     cursor = db.cursor()
-    cursor.execute(sql, {'pid': new_favorite})
+    cursor.execute(add_sql, {'pid': new_favorite})
     if cursor.fetchone()[0] > 0:
         raise faqhelper.IncorrectState
     cursor.fetchall()
-    sql = 'UPDATE posts SET posts.modFavorite = 1 WHERE posts.id = %(pid)s'
-    cursor.execute(sql, {'pid': new_favorite})
+    add_sql = 'UPDATE posts SET posts.modFavorite = 1 WHERE posts.id = %(pid)s'
+    cursor.execute(add_sql, {'pid': new_favorite})
     db.commit()
     cursor.close()
     return 0
@@ -139,14 +140,14 @@ def remove_favorite(fav_to_remove):
         raise faqhelper.MismatchedParameter
     elif not post_from_our_subreddit(r.submission(fav_to_remove)):
         raise faqhelper.WrongSubreddit
-    sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
+    remove_sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
     cursor = db.cursor()
-    cursor.execute(sql, {'pid': fav_to_remove})
+    cursor.execute(remove_sql, {'pid': fav_to_remove})
     if cursor.fetchone()[0] <= 0:
         raise faqhelper.IncorrectState
     cursor.fetchall()
-    sql = 'UPDATE posts SET posts.modFavorite = 0 WHERE posts.id = %(pid)s'
-    cursor.execute(sql, {'pid': fav_to_remove})
+    remove_sql = 'UPDATE posts SET posts.modFavorite = 0 WHERE posts.id = %(pid)s'
+    cursor.execute(remove_sql, {'pid': fav_to_remove})
     db.commit()
     cursor.close()
     return 0
@@ -181,9 +182,9 @@ def ignore_token(token):
     global db
     if token is None:
         raise faqhelper.MissingParameter
-    sql = 'UPDATE tokens SET tokens.document_count = tokens.document_count + 1000 WHERE tokens.token LIKE %(tok)s'
+    ign_sql = 'UPDATE tokens SET tokens.document_count = tokens.document_count + 1000 WHERE tokens.token LIKE %(tok)s'
     cursor = db.cursor()
-    cursor.execute(sql, {'tok': token})
+    cursor.execute(ign_sql, {'tok': token})
     db.commit()
     cursor.close()
     return 0
@@ -340,13 +341,13 @@ def process_post(post):
     if post_is_processed(post_id):
         raise faqhelper.AlreadyProcessed
         
-    print("Processing necessary for post %s" % (post_id))
+    print("Processing necessary for post %s" % post_id)
 
     # we don't have to count this again if we already have
     cursor = db.cursor()
-    cursor.execute("SELECT id FROM posts WHERE `id`=%(pid)s",{'pid': post_id})
-    row = cursor.fetchone()
-    if row is None:
+    cursor.execute("SELECT id FROM posts WHERE `id`=%(pid)s", {'pid': post_id})
+    exists_row = cursor.fetchone()
+    if exists_row is None:
         token_counting(post)
     cursor.close()
     keyword_list: str = post_keywords(post_id)
@@ -377,11 +378,11 @@ def process_post(post):
     reply_body = post_analysis_message(keyword_list, output_data)
     # TESTING ONLY
     reply_body = "Test reply for [" + post.title + "](" + post.permalink + ")\n\n------\n\n" + reply_body
-    r.submission('co5du1').reply(reply_body); # test post for examining replies in public
+    r.submission('co5du1').reply(reply_body)  # test post for examining replies in public
     # TODO: do other stuff, like add a comment with links and a quote
     cursor = db.cursor()
-    sql = 'UPDATE posts SET isKwProcessed = 1 WHERE id = %(pid)s;'
-    cursor.execute(sql, {'pid': post_id})
+    update_sql = 'UPDATE posts SET isKwProcessed = 1 WHERE id = %(pid)s;'
+    cursor.execute(update_sql, {'pid': post_id})
     db.commit()
     cursor.close()
     return
@@ -493,20 +494,20 @@ def token_counting(post):
     print("Adding tokens for post %s: \"%s\"" % (post_id, post_title))
     for token in text_set:
         # print(' ' + token)
-        # new_token_id = 0
+        new_token_id = 0
         count = text_array.count(token)
         # add counts to SQL database (use Jaccard scoring to determine "source" keyword, or add new ?)
         cursor = db.cursor()
         get_token = "SELECT tokens.id FROM tokens WHERE tokens.token LIKE %(wrd)s"
         cursor.execute(get_token, {'wrd': token})
-        row = cursor.fetchone()
+        word_row = cursor.fetchone()
         # check for match
         make_new_word = (cursor.rowcount <= 0)
         if make_new_word:  # no token found
             make_new_word = token in english_vocab  # is the token an existing word
             if not make_new_word:  # if the token does not exist in English, find its closest match
                 matched_token_set = cursor.callproc('closestMatch', (token, (0, 'CHAR'), 0, 0))
-                matched_token = matched_token_set[1]
+                # matched_token = matched_token_set[1]
                 matched_id = matched_token_set[2]
                 matched_proximity = matched_token_set[3]
                 # if match is insufficient, add it to the token table
@@ -518,14 +519,15 @@ def token_counting(post):
                     new_token_id = matched_id
                 else:  # otherwise, we need to make a new word for this... whatever it is
                     make_new_word = True
-            if make_new_word:  # the token was not in our database and either was in English or did not match anything closely
+            if make_new_word:
+                # the token was not in our database and either was in English or did not match anything closely
                 # add to tokens table
                 add_to_tokens = "INSERT IGNORE INTO tokens (token, document_count) VALUES (%(str)s, 1)"
                 cursor.execute(add_to_tokens, {'str': token})
                 db.commit()
                 new_token_id = cursor.lastrowid
         else:  # the token was found in the database already
-            new_token_id = row[0]
+            new_token_id = word_row[0]
             
         if not make_new_word:  # either the token was found initially or with a jaccard match
             # update tokens table
@@ -642,7 +644,8 @@ def handle_command_message(msg):
             except (faqhelper.BadParameter, faqhelper.IncorrectState, faqhelper.WrongSubreddit):
                 reply_message = improper_params(cmd[0])
                 pass
-            code_to_exec = 'global reply_message; reply_message = ' + switch(faqhelper.ADMIN_REPLIES, '-1', cmd[0].upper())
+            code_to_exec = 'global reply_message; reply_message = '\
+                           + switch(faqhelper.ADMIN_REPLIES, '-1', cmd[0].upper())
             exec(code_to_exec, globals(), locals())
         reply_message += admin_signature()
     msg.reply(reply_message)
@@ -650,7 +653,7 @@ def handle_command_message(msg):
 
 
 def main_loop():
-    global r, db
+    global r, db, subr
     try:
         subr = r.subreddit(config.SUBREDDIT)
         initial_data_load(subr)
@@ -686,7 +689,7 @@ def main_loop():
         db = get_mysql_connection()
         pass
     except praw.exceptions.APIException as apie:
-        if (apie.field.lower() == 'ratelimit'):
+        if apie.field.lower() == 'ratelimit':
             minutes = get_numbers(apie.message)[0]
             time.sleep(minutes * 60)
         else:
@@ -705,7 +708,7 @@ def main_loop():
         for trace in traces:
             err_msg += '    ' + trace + '\n'  # stack trace
         r.redditor(config.ADMIN_USER).message('FAQ CRASH', err_msg)
-        # DON'T PASS HERE -- we want uncaught exceptions to crash the bot and tell us
+        raise e
     main_loop()
     return
 
