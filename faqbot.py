@@ -14,7 +14,7 @@ from config import faqhelper
 VALID_ADMINS: List[str] = [config.ADMIN_USER]
 reply_message: str = ''
 replacement: str = ''
-subr: praw.subreddit = None
+subr: praw.models.Subreddit = None
 # endregion
 
 
