@@ -685,10 +685,14 @@ def main_loop():
                 if isinstance(caller, praw.models.Message):
                     caller.delete()
     except mysql.connector.OperationalError:
+        err_data = sys.exc_info()
+        print(err_data)
         db.close()
         db = get_mysql_connection()
         pass
     except praw.exceptions.APIException as apie:
+        err_data = sys.exc_info()
+        print(err_data)
         if apie.field.lower() == 'ratelimit':
             minutes = get_numbers(apie.message)[0]
             time.sleep(minutes * 60)
@@ -697,6 +701,8 @@ def main_loop():
             r = get_reddit()
         pass
     except praw.exceptions.ClientException:
+        err_data = sys.exc_info()
+        print(err_data)
         r = None
         r = get_reddit()
         pass
