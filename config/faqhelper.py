@@ -59,33 +59,46 @@ class Error(Exception):
     # base class for our custom exceptions
     pass
 
+
 class IgnoredFlair(Error):
     # this error is raised when a post with an ignored flair text is processed
     pass
+
+
+class IgnoredTitle(Error):
+    # this error is raised when a post with ignored text in the title is processed
+    pass
+
 
 class IncorrectPostType(Error):
     # this error is raised when a mod/sticky post or link post is processed
     pass
 
+
 class AlreadyProcessed(Error):
     # this error is raised when a post that has already been processed is processed again
     pass
+
 
 class MissingParameter(Error):
     # this error is raised when a command is sent without the right parameters
     pass
 
+
 class MismatchedParameter(Error):
     # this error is raised when a command is sent with the wrong type of parameter
     pass
+
 
 class BadParameter(Error):
     # this error is raised when a command is sent with a parameter of the correct type, but the parameter value is dumb
     pass
 
+
 class WrongSubreddit(Error):
     # this error is raised when the bot is commanded to deal with a post in a different subreddit
     pass
+
 
 class IncorrectState(Error):
     # this error is raised when the bot is commanded to do something that doesn't make sense,

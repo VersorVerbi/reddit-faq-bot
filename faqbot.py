@@ -338,6 +338,9 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
     if post.link_flair_text is not None:
         if post.link_flair_text.lower() in config.FLAIRS_TO_IGNORE:
             raise faqhelper.IgnoredFlair
+    for ignorable in config.TITLE_TEXT_TO_IGNORE:
+        if ignorable in post.title.lower():
+            raise faqhelper.IgnoredTitle
     if post.stickied or not post.is_self:
         raise faqhelper.IncorrectPostType
     
@@ -443,10 +446,20 @@ def handle_query(short_str: str):
 
 
 def retrieve_token_counts(submissions):
-    global db
+    global db, fromCrash
     for post in submissions:
         # "gilded" returns both comments and submissions, so exclude the comments
         if not isinstance(post, praw.models.Submission) or not post.is_self or is_link_only(post.selftext):
+            continue
+        if post.link_flair_text is not None:
+            if post.link_flair_text.lower() in config.FLAIRS_TO_IGNORE:
+                continue
+        skip = False
+        for ignorable in config.TITLE_TEXT_TO_IGNORE:
+            if ignorable in post.title.lower():
+                skip = True
+                break
+        if skip:
             continue
         post_id = post.id
         # if in posts SQL table already, do nothing
@@ -456,7 +469,12 @@ def retrieve_token_counts(submissions):
         cursor.fetchall()
         if cursor.rowcount > 0:
             cursor.close()
-            continue
+            if fromCrash:
+                # if things are only sorted by new, then getting to something we've already done means nothing
+                # else will be new to us, either
+                break
+            else:
+                continue
         cursor.close()
         # otherwise, count the tokens
         token_counting(post)
@@ -538,6 +556,11 @@ def prepare_post_text(post):
     replace_pattern = r'http(\w|\W)+?(?=\)| |\t|\v|$)'
     post_text = re.sub(replace_pattern, remove_nonalpha, post_text.lower())
     post_title = re.sub(replace_pattern, remove_nonalpha, post_title.lower())
+    # this regex finds cardinal numbers (i.e., not "1st" or "3rd", but "37" or "6")
+    # we want to remove these because they're not really words, and they're not relevant regardless
+    replace_pattern = r'\b\d+\b'
+    post_text = re.sub(replace_pattern, remove_nonalpha, post_text)
+    post_title = re.sub(replace_pattern, remove_nonalpha, post_title)
     # this regex finds any character that is NOT lowercase a-z or diacritically marked variants of the same or an
     # apostrophe or a space
     # we want to replace these characters with spaces so that words separated by only a slash, dash, line break, etc.,
@@ -673,6 +696,7 @@ def main_loop():
     try:
         subr = r.subreddit(config.SUBREDDIT)
         initial_data_load(subr)
+        print("Initial load done")
         while True:
             callers = get_stream()
             for caller in callers:
