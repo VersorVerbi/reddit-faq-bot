@@ -34,9 +34,7 @@ def command_ok():
 
 def post_is_processed(post_id: str):
     global db
-    cursor = db.cursor()
-    query = "SELECT isKwProcessed FROM posts WHERE id=%(pid)s"
-    cursor.execute(query, {'pid': post_id})
+    cursor = execute_sql("SELECT isKwProcessed FROM posts WHERE id=%(pid)s", {'pid': post_id})
     process_row = cursor.fetchone()
     if process_row is not None:
         is_processed = process_row[0] > 0
@@ -53,9 +51,7 @@ def is_link_only(body):
 
 def past_is_prologue():
     global db
-    cursor = db.cursor()
-    query = "UPDATE posts SET isKwProcessed = 1 WHERE isKwProcessed = 0;"
-    cursor.execute(query)
+    cursor = execute_sql("UPDATE posts SET isKwProcessed = 1 WHERE isKwProcessed = 0;")
     db.commit()
     cursor.close()
     return
@@ -75,11 +71,30 @@ def execute_sql_file(filename):
     return
 
 
+def execute_sql(sql: str, params: object = None):
+    global db
+    retry = False
+    while True:
+        try:
+            cursor = db.cursor()
+            cursor.execute(sql, params)
+            retry = False
+        except mysql.connector.Error:
+            if cursor is not None:
+                cursor.close()
+            if db is not None:
+                db.close()
+            db = get_mysql_connection()
+            retry = True
+        if not retry:
+            break
+    return cursor
+
+
 def update_setting(setting_name, setting_value):
     global db
-    cursor = db.cursor()
-    update_sql = "REPLACE INTO settings (`descriptor`, `value`) VALUES (%(desc)s, %(val)s)"
-    cursor.execute(update_sql, {'val': setting_value, 'desc': setting_name})
+    cursor = execute_sql("REPLACE INTO settings (`descriptor`, `value`) VALUES (%(desc)s, %(val)s)",
+                         {'val': setting_value, 'desc': setting_name})
     db.commit()
     cursor.close()
     return 0
@@ -107,6 +122,11 @@ def get_reddit():
 
 def get_numbers(string: str):
     return [int(i) for i in string.split() if i.isdigit()]
+
+
+def post_reply(reply_to, reply_with):
+    reply_to.reply(reply_with)
+    return
 # endregion
 
 
@@ -119,14 +139,11 @@ def add_favorite(new_favorite):
         raise faqhelper.MismatchedParameter
     elif not post_from_our_subreddit(r.submission(new_favorite)):
         raise faqhelper.WrongSubreddit
-    add_sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
-    cursor = db.cursor()
-    cursor.execute(add_sql, {'pid': new_favorite})
+    cursor = execute_sql('SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s', {'pid': new_favorite})
     if cursor.fetchone()[0] > 0:
         raise faqhelper.IncorrectState
-    cursor.fetchall()
-    add_sql = 'UPDATE posts SET posts.modFavorite = 1 WHERE posts.id = %(pid)s'
-    cursor.execute(add_sql, {'pid': new_favorite})
+    cursor.close()
+    cursor = execute_sql('UPDATE posts SET posts.modFavorite = 1 WHERE posts.id = %(pid)s', {'pid': new_favorite})
     db.commit()
     cursor.close()
     return 0
@@ -140,14 +157,11 @@ def remove_favorite(fav_to_remove):
         raise faqhelper.MismatchedParameter
     elif not post_from_our_subreddit(r.submission(fav_to_remove)):
         raise faqhelper.WrongSubreddit
-    remove_sql = 'SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s'
-    cursor = db.cursor()
-    cursor.execute(remove_sql, {'pid': fav_to_remove})
+    cursor = execute_sql('SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s', {'pid': fav_to_remove})
     if cursor.fetchone()[0] <= 0:
         raise faqhelper.IncorrectState
-    cursor.fetchall()
-    remove_sql = 'UPDATE posts SET posts.modFavorite = 0 WHERE posts.id = %(pid)s'
-    cursor.execute(remove_sql, {'pid': fav_to_remove})
+    cursor.close()
+    cursor = execute_sql('UPDATE posts SET posts.modFavorite = 0 WHERE posts.id = %(pid)s', {'pid': fav_to_remove})
     db.commit()
     cursor.close()
     return 0
@@ -182,9 +196,9 @@ def ignore_token(token):
     global db
     if token is None:
         raise faqhelper.MissingParameter
-    ign_sql = 'UPDATE tokens SET tokens.document_count = tokens.document_count + 1000 WHERE tokens.token LIKE %(tok)s'
-    cursor = db.cursor()
-    cursor.execute(ign_sql, {'tok': token})
+    cursor = execute_sql('UPDATE tokens '
+                         'SET tokens.document_count = tokens.document_count + 1000 '
+                         'WHERE tokens.token LIKE %(tok)s', {'tok': token})
     db.commit()
     cursor.close()
     return 0
@@ -314,9 +328,7 @@ def test_results(pid_to_test):
 # region analysis functions
 def related_posts(post_id):
     global db
-    cursor = db.cursor()
-    query = "SELECT relatedPosts(%(pid)s);"
-    cursor.execute(query, {'pid': post_id})
+    cursor = execute_sql('SELECT relatedPosts(%(pid)s);', {'pid': post_id})
     related = cursor.fetchone()
     cursor.close()
     return related[0].split(',')
@@ -324,9 +336,7 @@ def related_posts(post_id):
 
 def post_keywords(post_id):
     global db
-    cursor = db.cursor()
-    query = "SELECT keywordList(%(pid)s);"
-    cursor.execute(query, {'pid': post_id})
+    cursor = execute_sql('SELECT keywordList(%(pid)s);', {'pid': post_id})
     keywords = cursor.fetchone()
     cursor.close()
     return keywords[0]
@@ -359,8 +369,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
     print("Processing necessary for post %s" % post_id)
 
     # we don't have to count this again if we already have
-    cursor = db.cursor()
-    cursor.execute("SELECT id FROM posts WHERE `id`=%(pid)s", {'pid': post_id})
+    cursor = execute_sql("SELECT id FROM posts WHERE `id`=%(pid)s", {'pid': post_id})
     exists_row = cursor.fetchone()
     if exists_row is None:
         token_counting(post)
@@ -392,13 +401,24 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
                 output_data['top_cmt'] = top_comment
     reply_body = post_analysis_message(keyword_list, output_data)
     if reply_to_thread:
-        # TESTING ONLY
-        reply_body = "Test reply for [%s](%s)\n\n------\n\n%s" % (post.title, post.permalink, reply_body)
-        r.submission('co5du1').reply(reply_body)  # test post for examining replies in public
-        # TODO: do other stuff, like add a comment with links and a quote
-    cursor = db.cursor()
-    update_sql = 'UPDATE posts SET isKwProcessed = 1 WHERE id = %(pid)s;'
-    cursor.execute(update_sql, {'pid': post_id})
+        retry: bool = False
+        while True:
+            try:
+                # TESTING ONLY
+                reply_body = "Test reply for [%s](%s)\n\n------\n\n%s" % (post.title, post.permalink, reply_body)
+                post_reply(r.submission('co5du1'), reply_body)  # test post for examining replies in public
+                retry = False
+                # TODO: do other stuff, like add a comment with links and a quote
+            except praw.exceptions.APIException as e:
+                if e.field.lower() == 'ratelimit':
+                    minutes = get_numbers(e.message)[0]
+                    time.sleep((minutes + 1) * 60)
+                    retry = True
+                else:
+                    raise e
+            if not retry:
+                break
+    cursor = execute_sql('UPDATE posts SET isKwProcessed = 1 WHERE id = %(pid)s;', {'pid': post_id})
     db.commit()
     cursor.close()
     return reply_body
@@ -466,9 +486,7 @@ def retrieve_token_counts(submissions):
             continue
         post_id = post.id
         # if in posts SQL table already, do nothing
-        cursor = db.cursor()
-        query = "SELECT id FROM posts WHERE id = %(pid)s"
-        cursor.execute(query, {'pid': post_id})
+        cursor = execute_sql('SELECT id FROM posts WHERE id = %(pid)s', {'pid': post_id})
         cursor.fetchall()
         if cursor.rowcount > 0:
             cursor.close()
@@ -490,9 +508,7 @@ def token_counting(post):
     post_id = post.id
     post_title, text_array, text_set = prepare_post_text(post)
     # add post_id to posts SQL table (have to do this first so foreign keys in other SQL tables don't complain)
-    cursor = db.cursor()
-    add_to_posts = "INSERT IGNORE INTO posts (id) VALUES (%(pid)s)"
-    cursor.execute(add_to_posts, {'pid': post_id})
+    cursor = execute_sql('INSERT IGNORE INTO posts (id) VALUES (%(pid)s)', {'pid': post_id})
     db.commit()
     cursor.close()
     # loop through tokens and add them to the database
@@ -502,9 +518,7 @@ def token_counting(post):
         new_token_id = 0
         count = text_array.count(token)
         # add counts to SQL database (use Jaccard scoring to determine "source" keyword, or add new ?)
-        cursor = db.cursor()
-        get_token = "SELECT tokens.id FROM tokens WHERE tokens.token LIKE %(wrd)s"
-        cursor.execute(get_token, {'wrd': token})
+        cursor = execute_sql('SELECT tokens.id FROM tokens WHERE tokens.token LIKE %(wrd)s', {'wrd': token})
         word_row = cursor.fetchone()
         # check for match
         make_new_word = (cursor.rowcount <= 0)
@@ -527,23 +541,25 @@ def token_counting(post):
             if make_new_word:
                 # the token was not in our database and either was in English or did not match anything closely
                 # add to tokens table
-                add_to_tokens = "INSERT IGNORE INTO tokens (token, document_count) VALUES (%(str)s, 1)"
-                cursor.execute(add_to_tokens, {'str': token})
+                cursor = execute_sql('INSERT IGNORE INTO tokens (token, document_count) VALUES (%(str)s, 1)',
+                                     {'str': token})
                 db.commit()
                 new_token_id = cursor.lastrowid
+                cursor.close()
         else:  # the token was found in the database already
             new_token_id = word_row[0]
             
         if not make_new_word:  # either the token was found initially or with a jaccard match
             # update tokens table
-            add_to_tokens = "UPDATE tokens SET document_count = document_count + 1 WHERE id=%(tid)s"
-            cursor.execute(add_to_tokens, {'tid': new_token_id})
+            cursor = execute_sql('UPDATE tokens SET document_count = document_count + 1 WHERE id=%(tid)s',
+                                 {'tid': new_token_id})
             db.commit()
+            cursor.close()
             
         # add to keywords table
-        add_to_keywords = "INSERT IGNORE INTO keywords (tokenId, postId, num_in_post) " \
-                          "VALUES (%(tid)s, %(pid)s, %(count)s)"
-        cursor.execute(add_to_keywords, {'tid': new_token_id, 'pid': post_id, 'count': count})
+        cursor = execute_sql('INSERT IGNORE INTO keywords (tokenId, postId, num_in_post) '
+                             'VALUES (%(tid)s, %(pid)s, %(count)s)',
+                             {'tid': new_token_id, 'pid': post_id, 'count': count})
         db.commit()
         cursor.close()
 
@@ -736,17 +752,7 @@ def main_loop():
         db.close()
         db = get_mysql_connection()
         pass
-    except praw.exceptions.APIException as apie:
-        err_data = sys.exc_info()
-        print(err_data)
-        if apie.field.lower() == 'ratelimit':
-            minutes = get_numbers(apie.message)[0]
-            time.sleep(minutes * 60)
-        else:
-            r = None
-            r = get_reddit()
-        pass
-    except praw.exceptions.ClientException:
+    except praw.exceptions.PRAWException:
         err_data = sys.exc_info()
         print(err_data)
         r = None
@@ -776,8 +782,7 @@ else:
     fromCrash = True
     fullReset = False
 
-exists_cursor = db.cursor()
-exists_cursor.execute('SHOW TABLES LIKE %(tbl)s', {'tbl': 'keywords'})
+exists_cursor = execute_sql('SHOW TABLES LIKE %(tbl)s', {'tbl': 'keywords'})
 exists = exists_cursor.fetchone()
 if not exists:
     fullReset = False
@@ -790,12 +795,9 @@ exists_cursor.close()
     
 if fullReset:
     fromCrash = False
-    reset_cursor = db.cursor()
-    sql = "TRUNCATE keywords; TRUNCATE tokens;"
-    reset_cursor.execute(sql, multi=True)
+    reset_cursor = execute_sql("TRUNCATE keywords; TRUNCATE tokens;", multi=True)
     db.commit()
-    sql = "SELECT id FROM posts;"
-    reset_cursor.execute(sql)
+    reset_cursor = execute_sql("SELECT id FROM posts;")
     for row in reset_cursor:
         token_counting(r.submission(row[0]))
     reset_cursor.close()
