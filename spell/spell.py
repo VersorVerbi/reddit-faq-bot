@@ -5,6 +5,7 @@ Used under the MIT License: https://opensource.org/licenses/mit-license.php
 
 import re
 import nltk
+from os.path import dirname
 from collections import Counter
 
 def words(text): return re.findall(r'\w+', text.lower())
@@ -13,10 +14,10 @@ nltk.download('words')
 VOCAB = set(w.lower() for w in nltk.corpus.words.words())
 ADDITIONAL_WORDS = []
 
-WORDS = Counter(list(words(open('big.txt').read())) + list(VOCAB))
+WORDS = Counter(list(words(open(dirname(__file__) + '/big.txt').read())) + list(VOCAB))
 
 def add_to_words(word):
-  ADDITIONAL_WORDS.append(word)
+  ADDITIONAL_WORDS.extend(word)
   return
 
 def P(word, N=sum(WORDS.values())): return WORDS[word] / N
