@@ -16,7 +16,7 @@ ADDITIONAL_WORDS = []
 WORDS = Counter(list(words(open('big.txt').read())) + list(VOCAB))
 
 def add_to_words(word):
-  ADDITIONAL_WORDS.extend(word)
+  ADDITIONAL_WORDS.append(word)
   return
 
 def P(word, N=sum(WORDS.values())): return WORDS[word] / N
