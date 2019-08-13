@@ -5,7 +5,7 @@ import re
 import sys
 import time
 import traceback
-import spell
+from spell import spell
 from config import constants as config
 from config import faqhelper
 
