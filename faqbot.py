@@ -5,7 +5,7 @@ import re
 import sys
 import time
 import traceback
-import nltk
+import spell
 from config import constants as config
 from config import faqhelper
 
@@ -517,40 +517,33 @@ def token_counting(post):
         # print(' ' + token)
         new_token_id = 0
         count = text_array.count(token)
-        # add counts to SQL database (use Jaccard scoring to determine "source" keyword, or add new ?)
+        # add counts to SQL database (use spelling correction to determine "source" keyword, or add new)
         cursor = execute_sql('SELECT tokens.id FROM tokens WHERE tokens.token LIKE %(wrd)s', {'wrd': token})
         word_row = cursor.fetchone()
         # check for match
         make_new_word = (cursor.rowcount <= 0)
         if make_new_word:  # no token found
-            make_new_word = token in english_vocab  # is the token an existing word
-            if not make_new_word:  # if the token does not exist in English, find its closest match
-                matched_token_set = cursor.callproc('closestMatch', (token, (0, 'CHAR'), 0, 0))
-                # matched_token = matched_token_set[1]
-                matched_id = matched_token_set[2]
-                matched_proximity = matched_token_set[3]
-                # if match is insufficient, add it to the token table
-                token_length = len(token)
-                # if length <= 3, only 100% is sufficient (won't this still cause bugs -- e.g., fig vs gif?)
-                # as length increases, required match decreases (+1/-5?)
-                required_match = max(1 - (0.05 * (token_length - 3)), 0.6)
-                if matched_proximity > required_match:  # if the match is close enough, use it
-                    new_token_id = matched_id
-                else:  # otherwise, we need to make a new word for this... whatever it is
-                    make_new_word = True
+            new_word = spell.correction(token)  # is the token an existing word
+            if cursor is not None:
+                cursor.close()
+            cursor = execute_sql('SELECT tokens.id FROM tokens WHERE tokens.token LIKE %(wrd)s', {'wrd': new_word})
+            word_row = cursor.fetchone()
+            make_new_word = (cursor.rowcount <= 0)
             if make_new_word:
                 # the token was not in our database and either was in English or did not match anything closely
                 # add to tokens table
+                if cursor is not None:
+                    cursor.close()
                 cursor = execute_sql('INSERT IGNORE INTO tokens (token, document_count) VALUES (%(str)s, 1)',
                                      {'str': token})
                 db.commit()
                 new_token_id = cursor.lastrowid
                 cursor.close()
-        else:  # the token was found in the database already
+        if not make_new_word:  # either the token was found initially or with a spelling correction
             new_token_id = word_row[0]
-            
-        if not make_new_word:  # either the token was found initially or with a jaccard match
             # update tokens table
+            if cursor is not None:
+                cursor.close()
             cursor = execute_sql('UPDATE tokens SET document_count = document_count + 1 WHERE id=%(tid)s',
                                  {'tid': new_token_id})
             db.commit()
@@ -802,8 +795,5 @@ if fullReset:
         token_counting(r.submission(row[0]))
     reset_cursor.close()
     reset_all_settings()
-
-nltk.download('words')
-english_vocab = set(w.lower() for w in nltk.corpus.words.words())
 
 main_loop()
