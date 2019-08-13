@@ -403,10 +403,10 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
     reply_body = post_analysis_message(keyword_list, output_data)
     if reply_to_thread:
         retry: bool = False
+        # TESTING ONLY
+        reply_body = "Test reply for [%s](%s)\n\n------\n\n%s" % (post.title, post.permalink, reply_body)
         while True:
             try:
-                # TESTING ONLY
-                reply_body = "Test reply for [%s](%s)\n\n------\n\n%s" % (post.title, post.permalink, reply_body)
                 post_reply(r.submission('co5du1'), reply_body)  # test post for examining replies in public
                 retry = False
                 # TODO: do other stuff, like add a comment with links and a quote
