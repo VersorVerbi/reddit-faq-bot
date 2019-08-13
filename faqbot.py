@@ -74,6 +74,7 @@ def execute_sql_file(filename):
 def execute_sql(sql: str, params: object = None):
     global db
     retry = False
+    cursor = None
     while True:
         try:
             cursor = db.cursor()
