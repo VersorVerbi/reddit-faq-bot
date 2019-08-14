@@ -198,11 +198,6 @@ def update_numlinks(numlinks):
     return update_setting('numlinks', numlinks)
 
 
-def process_query(message):
-    # TODO: do this
-    return 0
-
-
 def ignore_token(token):
     global db
     if token is None:
@@ -306,9 +301,15 @@ def new_numlinks(numlinks):
     return message
 
 
-def query_results():
-    message = ''
-    return message
+def query_results(msg):
+    subject, text_array, text_set = prepare_post(msg)
+    # handle cases where someone specifically requested a "query"
+    if subject.lower() == "query":
+        text_array.remove('query')
+        if 'query' not in text_array:
+            text_set.remove('query')
+    my_reply = handle_query(tarray: text_array, tset: text_set)
+    return my_reply
 
 
 def token_ignored(token):
@@ -481,7 +482,14 @@ def process_comment(cmt):
     return
 
 
-def handle_query(short_str: str):
+def handle_query(short_str: str = None, tarray: list = None, tset: set = None):
+    if short_str is not None:
+        # do all string -> array/set processing
+        pass
+    elif tarray is None or tset is None:
+        # raise bad parameter exception of some kind
+        pass
+    # now handle query array
     # TODO: actually implement this
     return short_str
 
@@ -577,8 +585,12 @@ def token_counting(post):
 
 def prepare_post_text(post):
     global replacement
-    post_title = post.title
-    post_text = post.selftext
+    if isinstance(post, praw.models.Message):
+        post_title = post.subject
+        post_text = post.body
+    else:
+        post_title = post.title
+        post_text = post.selftext
     # this regex finds "http" followed by an unknown number of letters and not-letters until, looking ahead, we see a
     # closing parenthesis, a horizontal space, or a vertical space
     # we want to replace links with nothing so that they don't mess with our word analysis
