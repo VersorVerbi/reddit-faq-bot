@@ -759,6 +759,7 @@ def main_loop():
         err_data = sys.exc_info()
         print(err_data)
         db.close()
+        time.sleep(2)
         db = get_mysql_connection()
         pass
     except praw.exceptions.PRAWException:
