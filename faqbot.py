@@ -71,14 +71,14 @@ def execute_sql_file(filename):
     return
 
 
-def execute_sql(sql: str, params: object = None):
+def execute_sql(sql: str, params: object = None, multi: bool = False):
     global db
     retry = False
     cursor = None
     while True:
         try:
             cursor = db.cursor()
-            cursor.execute(sql, params)
+            cursor.execute(sql, params, multi)
             retry = False
         except mysql.connector.Error:
             if cursor is not None:
@@ -127,6 +127,16 @@ def get_numbers(string: str):
 
 def post_reply(reply_to, reply_with):
     reply_to.reply(reply_with)
+    return
+
+
+def mark_as_processed(post_id: str = None):
+    if post_id is None:
+        past_is_prologue()
+    else:
+        cursor = execute_sql('UPDATE posts SET isKwProcessed = 1 WHERE id = %(pid)s;', {'pid': post_id})
+        db.commit()
+        cursor.close()
     return
 # endregion
 
@@ -332,6 +342,8 @@ def related_posts(post_id):
     cursor = execute_sql('SELECT relatedPosts(%(pid)s);', {'pid': post_id})
     related = cursor.fetchone()
     cursor.close()
+    if related is None:
+        raise faqhelper.NoRelations
     return related[0].split(',')
 
 
@@ -376,7 +388,12 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
         token_counting(post)
     cursor.close()
     keyword_list: str = post_keywords(post_id)
-    list_of_related_posts: List[str] = related_posts(post_id)
+    try:
+        list_of_related_posts: List[str] = related_posts(post_id)
+    except faqhelper.NoRelations:
+        # literally nothing is related, so there's nothing we can do here
+        mark_as_processed(post_id)
+        return
     output_data: Dict[str, Union[Union[List[Any], int, praw.models.Comment], Any]] = {
         'title': [],
         'url': [],
@@ -419,9 +436,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
                     raise e
             if not retry:
                 break
-    cursor = execute_sql('UPDATE posts SET isKwProcessed = 1 WHERE id = %(pid)s;', {'pid': post_id})
-    db.commit()
-    cursor.close()
+    mark_as_processed(post_id)
     return reply_body
 
 
@@ -504,7 +519,7 @@ def retrieve_token_counts(submissions):
 
 
 def token_counting(post):
-    global db, english_vocab
+    global db
     # get post text data
     post_id = post.id
     post_title, text_array, text_set = prepare_post_text(post)
@@ -791,6 +806,7 @@ if fullReset:
     fromCrash = False
     reset_cursor = execute_sql("TRUNCATE keywords; TRUNCATE tokens;", multi=True)
     db.commit()
+    reset_cursor.close()
     reset_cursor = execute_sql("SELECT id FROM posts;")
     for row in reset_cursor:
         token_counting(r.submission(row[0]))

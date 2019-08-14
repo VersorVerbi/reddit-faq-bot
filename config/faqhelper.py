@@ -104,4 +104,9 @@ class IncorrectState(Error):
     # this error is raised when the bot is commanded to do something that doesn't make sense,
     # e.g., favorite a favorited post, or unfavorite one that isn't a favorite
     pass
+
+
+class NoRelations(Error):
+    # no related posts could be found
+    pass
 # endregion
