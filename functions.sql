@@ -138,7 +138,9 @@ BEGIN
     DECLARE postList VARCHAR(200) DEFAULT "";
     DECLARE sourceList VARCHAR(200) DEFAULT "";
     DECLARE linkLimit INT DEFAULT 5;
+    DECLARE keyLimit INT DEFAULT 5;
     SET linkLimit = SELECT `value` FROM settings WHERE `descriptor` = "numlinks";
+    SET keyLimit = SELECT `value` FROM settings WHERE `descriptor` = "numkeys";
     SET sourceList = tokenList(postQid);
     SET numTokens = LENGTH(sourceList) - LENGTH(REPLACE(sourceList,',','')) + 1;
     SET @myNum = numTokens;
@@ -163,7 +165,7 @@ BEGIN
 
     UPDATE related_posts SET tfIdf = 0 WHERE tfIdf = NULL;
 
-    SELECT GROUP_CONCAT(pid SEPARATOR ',') INTO postList FROM (SELECT pid, AVG(tfIdf) as tfIdfAvg FROM related_posts WHERE pid != postQid GROUP BY pid ORDER BY tfIdfAvg DESC LIMIT linkLimit) AS top_five;
+    SELECT GROUP_CONCAT(pid SEPARATOR ',') INTO postList FROM (SELECT pid, (SUM(tfIdf) / keyLimit) as tfIdfAvg FROM related_posts WHERE pid != postQid GROUP BY pid ORDER BY tfIdfAvg DESC LIMIT linkLimit) AS top_five;
 	DROP TEMPORARY TABLE source_tokens;
     DROP TEMPORARY TABLE related_posts;
     RETURN postList;
