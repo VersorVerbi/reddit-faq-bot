@@ -80,7 +80,7 @@ def execute_sql(sql: str, params: object = None, multi: bool = False):
             cursor = db.cursor()
             cursor.execute(sql, params=params, multi=multi)
             retry = False
-        except mysql.connector.Error:
+        except mysql.connector.errors.OperationalError:
             if cursor is not None:
                 cursor.close()
             if db is not None:
@@ -339,8 +339,10 @@ def test_results(pid_to_test):
 # region analysis functions
 def related_posts(post_id):
     global db
-    cursor = execute_sql('SELECT relatedPosts(%(pid)s);', {'pid': post_id})
-    related = cursor.fetchone()
+    cursor = db.cursor()
+    args = (post_id, None)
+    cursor.callproc('relatedPosts', args)
+    related = args[1]
     cursor.close()
     if related is None:
         raise faqhelper.NoRelations
