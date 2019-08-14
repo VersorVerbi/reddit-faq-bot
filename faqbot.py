@@ -78,7 +78,7 @@ def execute_sql(sql: str, params: object = None, multi: bool = False):
     while True:
         try:
             cursor = db.cursor()
-            cursor.execute(sql, params, multi)
+            cursor.execute(sql, params=params, multi=multi)
             retry = False
         except mysql.connector.Error:
             if cursor is not None:
@@ -393,7 +393,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
     except faqhelper.NoRelations:
         # literally nothing is related, so there's nothing we can do here
         mark_as_processed(post_id)
-        return
+        return ''
     output_data: Dict[str, Union[Union[List[Any], int, praw.models.Comment], Any]] = {
         'title': [],
         'url': [],
