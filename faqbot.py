@@ -320,7 +320,7 @@ def query_results(msg):
         text_array.remove('query')
         if 'query' not in text_array:
             text_set.remove('query')
-    my_reply = handle_query(tarray: text_array, tset: text_set)
+    my_reply = handle_query(tarray=text_array, tset=text_set)
     return my_reply
 
 
