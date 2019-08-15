@@ -711,7 +711,6 @@ def handle_command_message(msg):
     if msg.author not in VALID_ADMINS:
         if msg.author == config.REDDIT_USER:
             # ignore myself
-            msg.delete()
             return
         if msg.subject.split()[0].upper() == 'HELP':
             reply_message = help_text()
