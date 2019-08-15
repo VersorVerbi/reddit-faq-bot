@@ -7,17 +7,17 @@ BEGIN
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
   SELECT `value` INTO keyLimit FROM settings WHERE `descriptor` = "numkeys";
   OPEN keyword_cursor;
-  DROP TEMPORARY TABLE IF EXISTS document_keywords;
-  CREATE TEMPORARY TABLE document_keywords (tokenID int, tfIdf float);
+  DROP TEMPORARY TABLE IF EXISTS doc_keys;
+  CREATE TEMPORARY TABLE doc_keys (tokenID int, tfIdf float);
   check_keywords: LOOP
     FETCH keyword_cursor INTO keyword;
     IF finished = 1 THEN LEAVE check_keywords; END IF;
     SET @tf_idf = tfIdfScore(keyword, postQid);
-    INSERT INTO document_keywords VALUES (keyword, @tf_idf);
+    INSERT INTO doc_keys VALUES (keyword, @tf_idf);
   END LOOP check_keywords;
   CLOSE keyword_cursor;
-  SELECT GROUP_CONCAT(token SEPARATOR ', ') INTO @output FROM (SELECT tokens.token,document_keywords.tfIdf FROM tokens INNER JOIN document_keywords ON tokens.id = document_keywords.tokenID ORDER BY document_keywords.tfIdf DESC LIMIT 5) as s1;
-  DROP TEMPORARY TABLE document_keywords;
+  SELECT GROUP_CONCAT(token SEPARATOR ', ') INTO @output FROM (SELECT tokens.token,doc_keys.tfIdf FROM tokens INNER JOIN doc_keys ON tokens.id = doc_keys.tokenID ORDER BY doc_keys.tfIdf DESC LIMIT keyLimit) as s1;
+  DROP TEMPORARY TABLE doc_keys;
   RETURN @output;
 END
 
