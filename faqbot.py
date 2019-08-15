@@ -270,6 +270,18 @@ def sql_failure():
 
 def quick_analytics():
     global db
+    cursor = execute_sql("SELECT COUNT(*) FROM posts; "\
+                         "SELECT COUNT(*) FROM tokens; "\
+                         "SELECT `value` FROM settings WHERE `descriptor`='numkeys'; "\
+                         "SELECT `value` FROM settings WHERE `descriptor`='numlinks'; "\
+                         "SELECT COUNT(*) FROM posts WHERE modFavorite=1;", multi=True)
+    results = cursor.fetchall()
+    num_posts = results[0][0]
+    num_tokens = results[1][0]
+    num_keys = results[2][0]
+    num_links = results[3][0]
+    num_favs = results[4][0]
+    # TODO: finish this
     message = ''
     return message
 
