@@ -354,8 +354,8 @@ def related_posts(post_id):
     global db
     cursor = db.cursor()
     args = (post_id, None)
-    cursor.callproc('relatedPosts', args)
-    related = args[1]
+    ret = cursor.callproc('relatedPosts', args)
+    related = ret[1]
     cursor.close()
     if related is None:
         raise faqhelper.NoRelations
