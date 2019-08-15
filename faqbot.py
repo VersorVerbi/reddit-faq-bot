@@ -417,6 +417,10 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
     }
     for pid in list_of_related_posts:
         thread: praw.models.Submission = r.submission(pid)
+        try:
+            existsCheck = thread.comments
+        except prawcore.exceptions.ResponseException:
+            continue
         thread.comment_sort = 'confidence'
         if len(thread.comments) > 0:
             i = 0
