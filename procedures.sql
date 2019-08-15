@@ -22,7 +22,19 @@ BEGIN
         WHERE keywords.tokenID IN
                 (SELECT tokenID FROM document_keywords AS source_token_list);
 
-    SELECT GROUP_CONCAT(pid SEPARATOR ',') INTO postList FROM (SELECT pid, (SUM(tfIdf) / keyLimit) as tfIdfAvg FROM related_posts WHERE pid IN ((SELECT pid,COUNT(tid) AS commonKeys FROM related_posts WHERE pid != postQid AND commonKeys > CEILING(keyLimit / 2.0) GROUP BY pid) AS linksWithKeys) GROUP BY pid ORDER BY tfIdfAvg DESC LIMIT linkLimit) AS top_links;
-	DROP TABLE IF EXISTS document_keywords;
+    SELECT GROUP_CONCAT(pid SEPARATOR ',') INTO postList FROM (
+    	SELECT pid, (SUM(tfIdf) / keyLimit) as tfIdfAvg FROM related_posts WHERE pid IN (
+	    SELECT pid FROM (
+	     SELECT pid, COUNT(tid) AS commonKeys
+	     FROM related_posts
+	     WHERE pid != postQid
+	     GROUP BY pid
+	     HAVING commonKeys >= FLOOR(keyLimit / 2.0))
+	    AS linksWithKeys)
+	GROUP BY pid
+	ORDER BY tfIdfAvg DESC
+	LIMIT linkLimit) AS top_links;
+	
+    DROP TABLE IF EXISTS document_keywords;
     DROP TABLE IF EXISTS related_posts;
 END
