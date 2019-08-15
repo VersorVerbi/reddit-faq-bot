@@ -1,79 +1,28 @@
-CREATE PROCEDURE `closestMatch`(
-    IN `inTokenString` VARCHAR(512),
-    OUT `matchString` VARCHAR(512),
-    OUT `matchId` INT,
-    OUT `matchProximity` FLOAT)
-BEGIN
-    DECLARE finished BIT DEFAULT 0;
-    DECLARE token_string VARCHAR(512) DEFAULT "";
-    DECLARE token_id INT DEFAULT 0;
-    DECLARE max_jac FLOAT DEFAULT 0;
-    DECLARE max_id INT DEFAULT 0;
-    DECLARE max_string VARCHAR(512) DEFAULT "";
-
-    DECLARE token_cursor CURSOR FOR SELECT tokens.id, tokens.token FROM tokens;
-    DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
-
-    OPEN token_cursor;
-
-    fuzzy_match: LOOP
-        FETCH token_cursor INTO token_id, token_string;
-        IF finished = 1 THEN LEAVE fuzzy_match; END IF;
-        CALL jaccardScore(inTokenString, token_string, @jac);
-        IF @jac > max_jac THEN
-                SET max_jac = @jac;
-            SET max_id = token_id;
-            SET max_string = token_string;
-        END IF;
-    END LOOP fuzzy_match;
-    SET matchString = max_string;
-    SET matchId = max_id;
-    SET matchProximity = max_jac;
-END
-
-
-CREATE PROCEDURE `jaccardScore`(
-    IN `token1` VARCHAR(512),
-    IN `token2` VARCHAR(512),
-    OUT `score` FLOAT)
-BEGIN
-        DECLARE split_length INT DEFAULT 0;
-        SET @split1 = GREATEST(1,LEAST(3, FLOOR(CHAR_LENGTH(token1) / 3)));
-    SET @split2 = GREATEST(1,LEAST(3, FLOOR(CHAR_LENGTH(token2) / 3)));
-    SET split_length = LEAST(@split1, @split2);
-
-    DROP TABLE IF EXISTS token_1_chunks;
-    DROP TABLE IF EXISTS token_2_chunks;
-    CREATE TEMPORARY TABLE IF NOT EXISTS token_1_chunks (idx INT, chunk VARCHAR(3));
-    CREATE TEMPORARY TABLE IF NOT EXISTS token_2_chunks (idx INT, chunk VARCHAR(3));
-
-    SET @i = 1;
-    SET @idx = 0;
-    get_chunks_1: LOOP
-        IF @i > CHAR_LENGTH(token1) THEN LEAVE get_chunks_1; END IF;
-        SET @chunk = SUBSTRING(token1, @i, split_length);
-        INSERT INTO token_1_chunks VALUES (@idx, @chunk);
-        SET @idx = @idx + 1;
-        SET @i = @i + 1;
-    END LOOP get_chunks_1;
-
-    SET @i = 1;
-    SET @idx = 0;
-    get_chunks_2: LOOP
-        IF @i > CHAR_LENGTH(token2) THEN LEAVE get_chunks_2; END IF;
-        SET @chunk = SUBSTRING(token2, @i, split_length);
-        INSERT INTO token_2_chunks VALUES (@idx, @chunk);
-        SET @idx = @idx + 1;
-        SET @i = @i + 1;
-    END LOOP get_chunks_2;
-
-    SELECT @intersect_count:=COUNT(*) FROM token_1_chunks t1 INNER JOIN token_2_chunks t2 ON t1.chunk = t2.chunk;
-    SELECT @union_count:=COUNT(*) FROM (SELECT t1.chunk FROM token_1_chunks t1 UNION (SELECT t2.chunk FROM token_2_chunks t2)) AS s1;
-
-    SET score:=(@intersect_count / @union_count);
-END
-
-
 CREATE PROCEDURE `debugMsg`(IN `enabled` BIT, IN `msg` VARCHAR(255))
     NO SQL
 IF enabled THEN SELECT CONCAT('** ',msg) AS '** DEBUG:'; END IF
+
+CREATE PROCEDURE `relatedPosts`(IN `postQid` VARCHAR(20), OUT postList varchar(200) CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci)
+BEGIN
+    DECLARE sourceList VARCHAR(200) DEFAULT "";
+    DECLARE linkLimit INT DEFAULT 5;
+    DECLARE keyLimit INT DEFAULT 5;
+    SELECT CAST(`value` AS INT) INTO linkLimit FROM settings WHERE `descriptor` = "numlinks";
+    SELECT CAST(`value` AS INT) INTO keyLimit FROM settings WHERE `descriptor` = "numkeys";
+    
+    DROP TABLE IF EXISTS related_posts;
+    DROP TABLE IF EXISTS document_keywords;
+    CREATE TABLE related_posts (pid VARCHAR(20), tid INT, tfIdf FLOAT);
+    CREATE TABLE document_keywords (tokenID int, tfIdf float);
+    SET sourceList = tokenList(postQid);
+
+    INSERT INTO related_posts
+        SELECT keywords.postID, keywords.tokenID, (tfIdfLog(keywords.tokenID, keywords.postID) * (SELECT document_keywords.tfIdf FROM document_keywords WHERE document_keywords.tokenID = keywords.tokenID)) AS tfIdf
+        FROM keywords
+        WHERE keywords.tokenID IN
+                (SELECT tokenID FROM document_keywords AS source_token_list);
+
+    SELECT GROUP_CONCAT(pid SEPARATOR ',') INTO postList FROM (SELECT pid, (SUM(tfIdf) / keyLimit) as tfIdfAvg FROM related_posts WHERE pid IN ((SELECT pid,COUNT(tid) AS commonKeys FROM related_posts WHERE pid != postQid AND commonKeys > CEILING(keyLimit / 2.0) GROUP BY pid) AS linksWithKeys) GROUP BY pid ORDER BY tfIdfAvg DESC LIMIT linkLimit) AS top_links;
+	DROP TABLE IF EXISTS document_keywords;
+    DROP TABLE IF EXISTS related_posts;
+END
