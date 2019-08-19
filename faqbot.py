@@ -467,12 +467,13 @@ def post_analysis_message(keyword_list, output_data):
     for title, url in zip(output_data['title'], output_data['url']):
         reply_body += '* [' + title + '](' + url + ')\n'
     reply_body += '\nThe top-voted comment from those threads is this one:\n\n'
-    comment_body = output_data['top_cmt'].body
-    replacement = '\n\n> '
-    replace_pattern = '\n\n'
-    comment_body = re.sub(replace_pattern, remove_nonalpha, comment_body)
+    if (output_data['top_cmt']) is not None:
+        comment_body = output_data['top_cmt'].body
+        replacement = '\n\n> '
+        replace_pattern = '\n\n'
+        comment_body = re.sub(replace_pattern, remove_nonalpha, comment_body)
     reply_signature = user_signature(True)
-    if len(reply_body) + len(comment_body) + len(reply_signature) > 9999:
+    if len(reply_body) + len(comment_body) + len(reply_signature) > 9999 and len(comment_body) > 0:
         # don't have multi-line links, but don't have too many characters, either
         comment_body = comment_body.split('\n')[0]
         reply_body += '* [' + comment_body[:50] + '...](https://np.reddit.com' + output_data['top_cmt'].permalink + ')'
