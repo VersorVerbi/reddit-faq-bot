@@ -464,6 +464,7 @@ def post_analysis_message(keyword_list, output_data):
     global replacement
     reply_body = 'Our analysis of this post indicates that the keywords are: ' + keyword_list + '\n\n'
     reply_body += 'Here are some other posts that are related:\n\n'
+    comment_body = ''
     for title, url in zip(output_data['title'], output_data['url']):
         reply_body += '* [' + title + '](' + url + ')\n'
     reply_body += '\nThe top-voted comment from those threads is this one:\n\n'
