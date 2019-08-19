@@ -360,7 +360,7 @@ def related_posts(post_id):
     cursor.close()
     if related is None:
         raise faqhelper.NoRelations
-    return related[0].split(',')
+    return related.split(',')
 
 
 def post_keywords(post_id):
