@@ -419,7 +419,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
     for pid in list_of_related_posts:
         thread: praw.models.Submission = r.submission(pid)
         try:
-            existsCheck = thread.comments
+            exists_check = thread.comments
         except prawcore.exceptions.ResponseException:
             continue
         thread.comment_sort = 'confidence'
@@ -735,7 +735,7 @@ def handle_command_message(msg):
             except mysql.connector.Error:
                 reply_message = sql_failure()
                 pass
-            except (faqhelper.MissingParameter, faqhelper.MismatchedParameter):
+            except (faqhelper.MissingParameter, faqhelper.MismatchedParameter, IndexError):
                 reply_message = invalid_params(cmd)
                 pass
             except (faqhelper.BadParameter, faqhelper.IncorrectState, faqhelper.WrongSubreddit):
