@@ -730,6 +730,7 @@ def handle_command_message(msg):
             reply_message = invalid_command(cmd[0])
         else:
             try:
+                cmd_param = cmd[1]
                 code_to_exec = switch(faqhelper.ADMIN_COMMANDS, '-1', cmd[0].upper())
                 exec(code_to_exec, globals(), locals())
             except mysql.connector.Error:
