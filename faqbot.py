@@ -730,7 +730,6 @@ def handle_command_message(msg):
             reply_message = invalid_command(cmd[0])
         else:
             try:
-                cmd_param = cmd[1]
                 code_to_exec = switch(faqhelper.ADMIN_COMMANDS, '-1', cmd[0].upper())
                 exec(code_to_exec, globals(), locals())
             except mysql.connector.Error:
@@ -742,9 +741,13 @@ def handle_command_message(msg):
             except (faqhelper.BadParameter, faqhelper.IncorrectState, faqhelper.WrongSubreddit):
                 reply_message = improper_params(cmd[0])
                 pass
-            code_to_exec = 'global reply_message; reply_message = '\
-                           + switch(faqhelper.ADMIN_REPLIES, '-1', cmd[0].upper())
-            exec(code_to_exec, globals(), locals())
+            try:
+                code_to_exec = 'global reply_message; reply_message = '\
+                               + switch(faqhelper.ADMIN_REPLIES, '-1', cmd[0].upper())
+                exec(code_to_exec, globals(), locals())
+            except IndexError:
+                reply_message = invalid_params(cmd)
+                pass
         reply_message += admin_signature()
     msg.reply(reply_message)
     return
