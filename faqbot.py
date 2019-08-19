@@ -1,10 +1,11 @@
 from typing import Dict, List, Any, Union
 import praw
+import prawcore
 import mysql.connector
 import re
 import sys
-import time
 import traceback
+from time import sleep
 from spell import spell
 from config import constants as config
 from config import faqhelper
@@ -270,10 +271,10 @@ def sql_failure():
 
 def quick_analytics():
     global db
-    cursor = execute_sql("SELECT COUNT(*) FROM posts; "\
-                         "SELECT COUNT(*) FROM tokens; "\
-                         "SELECT `value` FROM settings WHERE `descriptor`='numkeys'; "\
-                         "SELECT `value` FROM settings WHERE `descriptor`='numlinks'; "\
+    cursor = execute_sql("SELECT COUNT(*) FROM posts; "
+                         "SELECT COUNT(*) FROM tokens; "
+                         "SELECT `value` FROM settings WHERE `descriptor`='numkeys'; "
+                         "SELECT `value` FROM settings WHERE `descriptor`='numlinks'; "
                          "SELECT COUNT(*) FROM posts WHERE modFavorite=1;", multi=True)
     results = cursor.fetchall()
     num_posts = results[0][0]
@@ -314,7 +315,7 @@ def new_numlinks(numlinks):
 
 
 def query_results(msg):
-    subject, text_array, text_set = prepare_post(msg)
+    subject, text_array, text_set = prepare_post_text(msg)
     # handle cases where someone specifically requested a "query"
     if subject.lower() == "query":
         text_array.remove('query')
@@ -449,7 +450,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
             except praw.exceptions.APIException as e:
                 if e.field.lower() == 'ratelimit':
                     minutes = get_numbers(e.message)[0]
-                    time.sleep((minutes + 1) * 60)
+                    sleep((minutes + 1) * 60)
                     retry = True
                 else:
                     raise e
@@ -788,7 +789,7 @@ def main_loop():
         err_data = sys.exc_info()
         print(err_data)
         db.close()
-        time.sleep(2)
+        sleep(2)
         db = get_mysql_connection()
         pass
     except praw.exceptions.PRAWException:
