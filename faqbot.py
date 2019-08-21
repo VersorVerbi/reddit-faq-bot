@@ -212,7 +212,7 @@ def ignore_token(token):
 # endregion
 
 
-# region reply functions
+# region signature functions
 def admin_signature():
     output = '\n\nThank you for using the ' + config.BOT_NAME + '!\n\n------\n\n'
     output += 'Remember that you can reply to this message,'
@@ -235,8 +235,10 @@ def user_signature(is_public=False):
     output += '^^PM ^^me ^^a ^^query ^^for ^^a ^^private ^^response.\n\n'
     output += '^^PM ^^/u/' + config.ADMIN_USER + ' ^^with ^^questions, ^^comments, ^^or ^^bug ^^reports.'
     return output
+# end region
 
 
+# region error reply functions
 def invalid_command(cmd):
     output = 'You have attempted to send me a command, but I didn\'t recognize it. The command you entered was `' + cmd
     output += '`.\n\nIf you\'re trying to query me like a "regular" user, remember that you must (1) start a **new** '
@@ -267,8 +269,10 @@ def improper_params(cmd):
 
 def sql_failure():
     return 'Something went wrong with the SQL query. The command has not been processed. Please try again.'
+# end region
 
 
+# region
 def quick_analytics():
     global db
     cursor = execute_sql("SELECT COUNT(*) FROM posts; "
@@ -282,8 +286,12 @@ def quick_analytics():
     num_keys = results[2][0]
     num_links = results[3][0]
     num_favs = results[4][0]
-    # TODO: finish this
-    message = ''
+    message = 'Here are some details on the current state of the database:\n\n'\
+              'Number of posts analyzed: ' + num_posts + '\n\n'\
+              'Number of unique words discovered: ' + num_tokens + '\n\n'\
+              'Maximum number of keywords selected for each post: ' + num_keys + '\n\n'\
+              'Maximum number of related links selected for each post: ' + num_links + '\n\n'\
+              'Number of moderator favorites: ' + num_favs
     return message
 
 
