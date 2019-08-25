@@ -212,16 +212,13 @@ def ignore_token(token):
 # endregion
 
 
-# region signature functions
+# region sig functions
 def admin_signature():
     output = '\n\nThank you for using the ' + config.BOT_NAME + '!\n\n------\n\n'
     output += 'Remember that you can reply to this message,'
     output += ' or send a new private message to this bot, in order to make adjustments to how'
-    output += ' it operates. Send a single command per message. (Every message will be interpeted'
-    output += ' based on the first command parsed only.)\n\nEach of these commands is case-'
-    output += 'insensitive:\n\n'
-    for cmd, desc in faqhelper.ADMIN_DESCRIPTIONS.items():
-        output += '* `' + cmd + '`: ' + desc + '\n'
+    output += ' it operates. To get more information about the available commands, send a '
+    output += 'message with the title (or body) `help` (case insensitive).'
     output += '\nPlease send a message to /u/' + config.ADMIN_USER + ' with questions, comments, or bug reports.'
     return output
 
@@ -233,9 +230,9 @@ def user_signature(is_public=False):
     output += '^^Tag ^^me ^^with ^^a ^^query ^^to ^^get ^^my ^^response, ^^or ^^just ^^tag ^^me ^^to ^^get ^^my ' \
               '^^response ^^to ^^the ^^parent ^^comment/post.\n\n'
     output += '^^PM ^^me ^^a ^^query ^^for ^^a ^^private ^^response.\n\n'
-    output += '^^PM ^^/u/' + config.ADMIN_USER + ' ^^with ^^questions, ^^comments, ^^or ^^bug ^^reports.'
+    output += '^^PM ^^/u\/' + config.ADMIN_USER + ' ^^with ^^questions, ^^comments, ^^or ^^bug ^^reports.'
     return output
-# end region
+# endregion
 
 
 # region error reply functions
@@ -269,10 +266,10 @@ def improper_params(cmd):
 
 def sql_failure():
     return 'Something went wrong with the SQL query. The command has not been processed. Please try again.'
-# end region
+# endregion
 
 
-# region
+# region command reply functions
 def quick_analytics():
     global db
     cursor = execute_sql("SELECT COUNT(*) FROM posts; "
@@ -296,7 +293,11 @@ def quick_analytics():
 
 
 def help_text():
-    message = ''
+    message = 'Send a single command per message. (Every message will be interpeted'\
+              ' based on the first command parsed only.)\n\nEach of these commands is case-'\
+              'insensitive:\n\n'
+    for cmd, desc in faqhelper.ADMIN_DESCRIPTIONS.items():
+        message += '* `' + cmd + '`: ' + desc + '\n'
     return message
 
 
@@ -329,7 +330,8 @@ def query_results(msg):
         text_array.remove('query')
         if 'query' not in text_array:
             text_set.remove('query')
-    my_reply = handle_query(tarray=text_array, tset=text_set)
+    post_list, impt_words = handle_query(tarray=text_array, tset=text_set)
+    my_reply = 'Important words: %s, Related posts: %s' % (impt_words, post_list)
     return my_reply
 
 
@@ -340,8 +342,9 @@ def token_ignored(token):
 
 def test_results(pid_to_test):
     global r
+    post = r.submission(pid_to_test)
     try:
-        message = process_post(r.submission(pid_to_test), False, True)
+        message = process_post(post, False, True)
     except faqhelper.IgnoredFlair:
         message = "Post %s has a flair that is set to be ignored." % pid_to_test
         pass
@@ -354,7 +357,8 @@ def test_results(pid_to_test):
     except faqhelper.WrongSubreddit:
         message = "Post %s is not on the r/%s subreddit." % (pid_to_test, config.SUBREDDIT)
         pass
-    return message
+    return "Test results for post (%s)[%s] (PID: %s)\n\n------\n\n%s" % \
+           (post.title, post.permalink, pid_to_test, message)
 # endregion
 
 
@@ -448,13 +452,13 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
     reply_body = post_analysis_message(keyword_list, output_data)
     if reply_to_thread:
         retry: bool = False
-        # TESTING ONLY
+        # TODO: remove testing code here+1 and here+5
         reply_body = "Test reply for [%s](%s)\n\n------\n\n%s" % (post.title, post.permalink, reply_body)
         while True:
             try:
+                # post_reply(post, reply_body)
                 post_reply(r.submission('co5du1'), reply_body)  # test post for examining replies in public
                 retry = False
-                # TODO: do other stuff, like add a comment with links and a quote
             except praw.exceptions.APIException as e:
                 if e.field.lower() == 'ratelimit':
                     minutes = get_numbers(e.message)[0]
@@ -465,7 +469,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
             if not retry:
                 break
     mark_as_processed(post_id)
-    return reply_body
+    return reply_body, post
 
 
 def post_analysis_message(keyword_list, output_data):
@@ -509,16 +513,21 @@ def process_comment(cmt):
     return
 
 
-def handle_query(short_str: str = None, tarray: list = None, tset: set = None):
-    if short_str is not None:
-        # do all string -> array/set processing
-        pass
-    elif tarray is None or tset is None:
-        # raise bad parameter exception of some kind
+def handle_query(tarray: list, tset: set):
+    global db
+    if tarray is None or tset is None:
+        # TODO: raise bad parameter exception of some kind
         pass
     # now handle query array
-    # TODO: actually implement this
-    return short_str
+    cursor = db.cursor()
+    args = (','.join(tarray), None, None)
+    ret = cursor.callproc('queryRelated', args)
+    related = ret[1]
+    important = ret[2]
+    cursor.close()
+    if related is None:
+        raise faqhelper.NoRelations
+    return related.split(','), important
 
 
 def retrieve_token_counts(submissions):
@@ -727,13 +736,15 @@ def handle_command_message(msg):
             reply_message = help_text()
         else:
             if msg.subject is not None and msg.body is not None:
-                reply_message = handle_query(msg.subject + ' ' + msg.body) + user_signature(False)
+                post_list, impt_words = handle_query(msg.subject + ' ' + msg.body) + user_signature(False)
+                reply_message = 'Important words: %s\n\nRelated posts: %s' % (impt_words, post_list)
             else:
                 return
     else:
         cmd = msg.subject.split()
         if cmd[0].upper() == 'QUERY':
-            reply_message = handle_query(msg.body)
+            post_list, impt_words = handle_query(msg.body)
+            reply_message = 'Important words: %s\n\nRelated posts: %s' % (impt_words, post_list)
         elif cmd[0].upper() not in faqhelper.ADMIN_COMMANDS:
             cmd = msg.body.split()
         if cmd[0].upper() not in faqhelper.ADMIN_COMMANDS:
@@ -827,6 +838,12 @@ def main_loop():
 
 # main -----------------------------------
 r = get_reddit()
+
+# local debug test
+strm = get_stream()
+# end local debug test
+
+
 db = get_mysql_connection()
 
 if len(sys.argv) > 1:

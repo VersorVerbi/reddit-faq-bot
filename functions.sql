@@ -47,8 +47,6 @@ BEGIN
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET finished = 1;
   SELECT CAST(`value` AS INT) INTO keyLimit FROM settings WHERE `descriptor` = "numkeys";
   OPEN keyword_cursor;
-  DROP TEMPORARY TABLE IF EXISTS document_keywords;
-  CREATE TEMPORARY TABLE document_keywords (tokenID int, tfIdf float);
   check_keywords: LOOP
     FETCH keyword_cursor INTO keyword;
     IF finished = 1 THEN LEAVE check_keywords; END IF;
