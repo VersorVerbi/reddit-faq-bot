@@ -513,9 +513,11 @@ def post_analysis_message(keyword_list, output_data):
 
 def process_comment(cmt):
     global subr, r, db
+    if cmt is None:
+        return
     if post_is_processed(cmt.id):
         return
-    if cmt.subreddit.lower() != config.SUBREDDIT.lower() or 'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():
+    if cmt.subreddit.name.lower() != config.SUBREDDIT.lower() or 'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():
         # ignore comments calling us in other subreddits and replying to our comments
         mark_as_processed(cmt.id)
         return
@@ -579,6 +581,7 @@ def handle_query(tarray: list, tset: set):
         pass
     # now handle query array
     cursor = db.cursor()
+    tarray = ['{0}'.format(element) for element in tarray]
     args = (','.join(tarray), None, None)
     ret = cursor.callproc('queryRelated', args)
     related = ret[1]
