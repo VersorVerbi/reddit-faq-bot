@@ -330,8 +330,12 @@ def query_results(msg):
         text_array.remove('query')
         if 'query' not in text_array:
             text_set.remove('query')
-    post_list, impt_words = handle_query(tarray=text_array, tset=text_set)
-    my_reply = 'Important words: %s, Related posts: %s' % (impt_words, post_list)
+    # TODO: Fix the responses of this function
+    try:
+        post_list, impt_words = handle_query(tarray=text_array, tset=text_set)
+        my_reply = 'Important words: %s, Related posts: %s' % (impt_words, post_list)
+    except faqhelper.NoRelations:
+        my_reply = 'Sorry, bud, no dice.'
     return my_reply
 
 
@@ -409,19 +413,29 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
         
     print("Processing necessary for post %s" % post_id)
 
-    # we don't have to count this again if we already have
-    cursor = execute_sql("SELECT id FROM posts WHERE `id`=%(pid)s", {'pid': post_id})
-    exists_row = cursor.fetchone()
-    if exists_row is None:
-        token_counting(post)
-    cursor.close()
-    keyword_list: str = post_keywords(post_id)
-    try:
-        list_of_related_posts: List[str] = related_posts(post_id)
-    except faqhelper.NoRelations:
-        # literally nothing is related, so there's nothing we can do here
-        mark_as_processed(post_id)
-        return ''
+    post_title, text_array, text_set = prepare_post_text(post)
+
+    if len(text_set) > 10:
+        # we don't have to count this again if we already have
+        cursor = execute_sql("SELECT id FROM posts WHERE `id`=%(pid)s", {'pid': post_id})
+        exists_row = cursor.fetchone()
+        if exists_row is None:
+            token_counting(post, post_title, text_array, text_set)
+        cursor.close()
+        try:
+            keyword_list: str = post_keywords(post_id)
+            list_of_related_posts: List[str] = related_posts(post_id)
+        except faqhelper.NoRelations:
+            # literally nothing is related, so there's nothing we can do here
+            mark_as_processed(post_id)
+            return ''
+    else:
+        try:
+            list_of_related_posts, keyword_list = handle_query(text_array, text_set)
+        except faqhelper.NoRelations:
+            # nothing is related
+            mark_as_processed(post_id)
+            return ''
     output_data: Dict[str, Union[Union[List[Any], int, praw.models.Comment], Any]] = {
         'title': [],
         'url': [],
@@ -469,7 +483,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
             if not retry:
                 break
     mark_as_processed(post_id)
-    return reply_body, post
+    return reply_body
 
 
 def post_analysis_message(keyword_list, output_data):
@@ -498,18 +512,63 @@ def post_analysis_message(keyword_list, output_data):
 
 
 def process_comment(cmt):
-    global subr
-    global r
-    if 'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():  # no tag, so a comment reply
-        if cmt.parent().author == r.redditor(config.REDDIT_USER):
-            for mod in subr.moderator():
-                VALID_ADMINS.append(str(mod))
-            if cmt.author == cmt.parent().parent().author or cmt.author in VALID_ADMINS:
-                if cmt.body.lower() == 'delete':
-                    cmt.parent().delete()
-        # TODO: determine if this or downvote system is better
-    else:  # we have been summoned
-        pass  # TODO: handle a comment
+    global subr, r, db
+    if post_is_processed(cmt.id):
+        return
+    if cmt.subreddit.lower() != config.SUBREDDIT.lower() or 'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():
+        # ignore comments calling us in other subreddits and replying to our comments
+        mark_as_processed(cmt.id)
+        return
+    # we have been summoned
+    cursor = execute_sql('INSERT IGNORE INTO posts (id) VALUES (%(pid)s)', {'pid': cmt.id})
+    db.commit()
+    cursor.close()
+    comment_reply, list_of_posts, list_of_keywords = '', '', ''
+    ptitle, text_array, text_set = prepare_post_text(cmt)
+    text_array.remove('u')
+    text_array.remove(config.REDDIT_USER.lower())
+    if 'u' not in text_array:
+        text_set.remove('u')
+    if config.REDDIT_USER.lower() not in text_array:
+        text_set.remove(config.REDDIT_USER.lower())
+    if len(text_set) > 0:
+        list_of_posts, list_of_keywords = handle_query(text_array, text_set)
+    else:
+        target = cmt.parent()
+        try:
+            if isinstance(target, praw.models.Submission):
+                try:
+                    comment_reply = process_post(target, False, True)
+                    list_of_posts = ''
+                    list_of_keywords = ''
+                except faqhelper.IncorrectPostType:
+                    comment_reply = 'Unfortunately, I am not equipped to handle link and sticky posts.'
+                    comment_reply += user_signature(True)
+                except (faqhelper.IgnoredFlair, faqhelper.IgnoredTitle):
+                    comment_reply = 'Unfortunately, I explicitly ignore posts with this flair or title. '\
+                                    'If you really want my input on some specific facet of this post, '\
+                                    'please tag me again (in a new comment) with a short selection of '\
+                                    'keywords or a question.'
+                    comment_reply += user_signature(True)
+            else:
+                ptitle, text_array, text_set = prepare_post_text(target)
+                list_of_posts, list_of_keywords = handle_query(text_array, text_set)
+        except faqhelper.NoRelations:
+            comment_reply += 'Unfortunately, I was unable to find any relevant posts in this case.'
+            comment_reply += user_signature(True)
+    comment_reply = 'Thanks for using the Catholic FAQ Bot!\n\n' + comment_reply
+    if len(list_of_keywords) > 0 and len(list_of_posts) > 0:
+        comment_reply += 'Our analysis indicates that the keywords are: ' + list_of_keywords
+        comment_reply += '\n\nHere are some posts that are related:\n\n'
+        array_of_posts = list_of_posts.split(',')
+        for pid in array_of_posts:
+            post = r.submission(pid)
+            plink = post.permalink
+            ptitle = post.title
+            comment_reply += '*[' + ptitle + '](' + plink + ')\n\n'
+        comment_reply += user_signature(True)
+    cmt.reply(comment_reply)
+    mark_as_processed(cmt.id)
     return
 
 
@@ -560,15 +619,15 @@ def retrieve_token_counts(submissions):
                 continue
         cursor.close()
         # otherwise, count the tokens
-        token_counting(post)
+        post_title, text_array, text_set = prepare_post_text(post)
+        token_counting(post, post_title, text_array, text_set)
     return
 
 
-def token_counting(post):
+def token_counting(post, post_title, text_array, text_set):
     global db
     # get post text data
     post_id = post.id
-    post_title, text_array, text_set = prepare_post_text(post)
     # add post_id to posts SQL table (have to do this first so foreign keys in other SQL tables don't complain)
     cursor = execute_sql('INSERT IGNORE INTO posts (id) VALUES (%(pid)s)', {'pid': post_id})
     db.commit()
@@ -617,12 +676,16 @@ def token_counting(post):
                              {'tid': new_token_id, 'pid': post_id, 'count': count})
         db.commit()
         cursor.close()
+    return
 
 
 def prepare_post_text(post):
     global replacement
     if isinstance(post, praw.models.Message):
         post_title = post.subject
+        post_text = post.body
+    elif isinstance(post, praw.models.Comment):
+        post_title = ''
         post_text = post.body
     else:
         post_title = post.title
@@ -720,7 +783,7 @@ def get_stream(**kwargs) -> praw.models.util.stream_generator:
     results.extend(r.inbox.comment_replies())
     results.extend(r.inbox.mentions())
     results.sort(key=lambda post: post.created_utc, reverse=True)
-    return praw.models.util.stream_generator(lambda **kwargs: results, **kwargs)
+    return praw.models.util.stream_generator(lambda **kwargs: results, pause_after=0, **kwargs)
 # endregion
 
 
@@ -736,15 +799,13 @@ def handle_command_message(msg):
             reply_message = help_text()
         else:
             if msg.subject is not None and msg.body is not None:
-                post_list, impt_words = handle_query(msg.subject + ' ' + msg.body) + user_signature(False)
-                reply_message = 'Important words: %s\n\nRelated posts: %s' % (impt_words, post_list)
+                reply_message = query_results(msg) + user_signature(False)
             else:
                 return
     else:
         cmd = msg.subject.split()
         if cmd[0].upper() == 'QUERY':
-            post_list, impt_words = handle_query(msg.body)
-            reply_message = 'Important words: %s\n\nRelated posts: %s' % (impt_words, post_list)
+            reply_message = query_results(msg)
         elif cmd[0].upper() not in faqhelper.ADMIN_COMMANDS:
             cmd = msg.body.split()
         if cmd[0].upper() not in faqhelper.ADMIN_COMMANDS:
@@ -810,6 +871,14 @@ def main_loop():
                     VALID_ADMINS.append(config.ADMIN_USER)
                 if isinstance(caller, praw.models.Message):
                     caller.delete()
+            # review old comments looking for downvotes
+            my_old_comments = r.redditor(config.REDDIT_USER).comments()
+            for old_comment in my_old_comments:
+                testing_text = old_comment.permalink + "\n\n" + old_comment.score
+                r.redditor(config.ADMIN_USER).message('OLD COMMENT', testing_text)
+                if old_comment.score < -5:
+                    # old_comment.delete()
+                    pass
     except mysql.connector.OperationalError:
         err_data = sys.exc_info()
         print(err_data)
@@ -871,7 +940,9 @@ if fullReset:
     reset_cursor.close()
     reset_cursor = execute_sql("SELECT id FROM posts;")
     for row in reset_cursor:
-        token_counting(r.submission(row[0]))
+        curpost = r.submission(row[0])
+        title, reset_text_array, reset_text_set = prepare_post_text(curpost)
+        token_counting(curpost, title, reset_text_array, reset_text_set)
     reset_cursor.close()
     reset_all_settings()
 
