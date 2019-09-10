@@ -581,7 +581,7 @@ def handle_query(tarray: list, tset: set):
         pass
     # now handle query array
     cursor = db.cursor()
-    tarray = ['{0}'.format(element) for element in tarray]
+    tarray = ['\'{0}\''.format(element) for element in tarray]
     args = (','.join(tarray), None, None)
     ret = cursor.callproc('queryRelated', args)
     related = ret[1]
