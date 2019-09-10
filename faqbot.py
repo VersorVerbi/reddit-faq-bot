@@ -16,6 +16,7 @@ VALID_ADMINS: List[str] = [config.ADMIN_USER]
 reply_message: str = ''
 replacement: str = ''
 subr: praw.models.Subreddit = None
+MIN_LINKS: int = 3
 # endregion
 
 
@@ -93,7 +94,7 @@ def execute_sql(sql: str, params: object = None, multi: bool = False):
     return cursor
 
 
-def update_setting(setting_name, setting_value):
+def update_setting(setting_name: str, setting_value):
     global db
     cursor = execute_sql("REPLACE INTO settings (`descriptor`, `value`) VALUES (%(desc)s, %(val)s)",
                          {'val': setting_value, 'desc': setting_name})
@@ -105,7 +106,19 @@ def update_setting(setting_name, setting_value):
 def reset_all_settings():
     update_setting('numlinks', 5)
     update_setting('numkeys', 5)
+    update_setting('minlinks', 3)
     return
+
+
+def get_setting(setting_name: str, default_val):
+    global db
+    cursor = execute_sql("SELECT `value` FROM settings WHERE `descriptor` = %(desc)s;", {'desc': setting_name})
+    setting_value = cursor.fetchone()
+    if setting_value is None:
+        setting_value = default_val
+    else:
+        setting_value = setting_value[0]
+    return setting_value
 
 
 def post_from_our_subreddit(post):
@@ -368,13 +381,13 @@ def test_results(pid_to_test):
 
 # region analysis functions
 def related_posts(post_id):
-    global db
+    global db, MIN_LINKS
     cursor = db.cursor()
     args = (post_id, None)
     ret = cursor.callproc('relatedPosts', args)
     related = ret[1]
     cursor.close()
-    if related is None:
+    if related is None or len(related) < MIN_LINKS:
         raise faqhelper.NoRelations
     return related.split(',')
 
@@ -517,7 +530,8 @@ def process_comment(cmt):
         return
     if post_is_processed(cmt.id):
         return
-    if cmt.subreddit.name.lower() != config.SUBREDDIT.lower() or 'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():
+    if cmt.subreddit.name.lower() != config.SUBREDDIT.lower() or\
+            'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():
         # ignore comments calling us in other subreddits and replying to our comments
         mark_as_processed(cmt.id)
         return
@@ -575,7 +589,7 @@ def process_comment(cmt):
 
 
 def handle_query(tarray: list, tset: set):
-    global db
+    global db, MIN_LINKS
     if tarray is None or tset is None:
         # TODO: raise bad parameter exception of some kind
         pass
@@ -587,7 +601,7 @@ def handle_query(tarray: list, tset: set):
     related = ret[1]
     important = ret[2]
     cursor.close()
-    if related is None:
+    if related is None or len(related) < MIN_LINKS:
         raise faqhelper.NoRelations
     return related.split(','), important
 
@@ -839,10 +853,11 @@ def handle_command_message(msg):
 
 
 def main_loop():
-    global r, db, subr
+    global r, db, subr, MIN_LINKS
     try:
         subr = r.subreddit(config.SUBREDDIT)
         initial_data_load(subr)
+        MIN_LINKS = get_setting('minlinks', 3)
         print("Initial load done")
         while True:
             callers = get_stream()
