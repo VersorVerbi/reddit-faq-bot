@@ -428,7 +428,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
 
     post_title, text_array, text_set = prepare_post_text(post)
 
-    if len(text_set) > 10:
+    if len(text_set) > 25:
         # we don't have to count this again if we already have
         cursor = execute_sql("SELECT id FROM posts WHERE `id`=%(pid)s", {'pid': post_id})
         exists_row = cursor.fetchone()
@@ -800,7 +800,7 @@ def get_stream(**kwargs) -> praw.models.util.stream_generator:
     results.extend(r.inbox.comment_replies())
     results.extend(r.inbox.mentions())
     results.sort(key=lambda post: post.created_utc, reverse=True)
-    return praw.models.util.stream_generator(lambda **kwargs: results, pause_after=0, **kwargs)
+    return praw.models.util.stream_generator(lambda **kwargs: results, pause_after=-1, **kwargs)
 # endregion
 
 
