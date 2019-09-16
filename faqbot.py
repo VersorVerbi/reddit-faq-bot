@@ -383,7 +383,7 @@ def related_posts(post_id):
     ret = cursor.callproc('relatedPosts', args)
     related = ret[1]
     cursor.close()
-    if related is None or len(related) < MIN_LINKS:
+    if related is None or len(related.split(',')) < MIN_LINKS:
         raise faqhelper.NoRelations
     return related.split(',')
 
@@ -597,7 +597,7 @@ def handle_query(tarray: list, tset: set):
     related = ret[1]
     important = ret[2]
     cursor.close()
-    if related is None or len(related) < MIN_LINKS:
+    if related is None or len(related.split(',')) < MIN_LINKS:
         raise faqhelper.NoRelations
     return related.split(','), important
 
