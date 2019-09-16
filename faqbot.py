@@ -879,7 +879,7 @@ def main_loop():
                 if isinstance(caller, praw.models.Message):
                     caller.delete()
             # review old comments looking for downvotes
-            my_old_comments = r.redditor(config.REDDIT_USER).comments()
+            my_old_comments = r.redditor(config.REDDIT_USER).comments.new(limit=1000)
             for old_comment in my_old_comments:
                 testing_text = old_comment.permalink + "\n\n" + old_comment.score
                 r.redditor(config.ADMIN_USER).message('OLD COMMENT', testing_text)
