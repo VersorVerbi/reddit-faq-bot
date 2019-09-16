@@ -862,6 +862,8 @@ def main_loop():
         while True:
             callers = get_stream()
             for caller in callers:
+                if caller is None:
+                    break
                 if isinstance(caller, praw.models.Message):
                     handle_command_message(caller)
                 elif isinstance(caller, praw.models.Submission):
