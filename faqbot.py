@@ -337,18 +337,22 @@ def new_numlinks(numlinks):
 
 
 def query_results(msg):
+    global r
     subject, text_array, text_set = prepare_post_text(msg)
     # handle cases where someone specifically requested a "query"
     if subject.lower() == "query":
         text_array.remove('query')
         if 'query' not in text_array:
             text_set.remove('query')
-    # TODO: Fix the responses of this function
     try:
-        post_list, impt_words = handle_query(tarray=text_array, tset=text_set)
-        my_reply = 'Important words: %s, Related posts: %s' % (impt_words, post_list)
+        post_list, impt_words = handle_query(text_array, text_set, True)
+        my_reply = 'The keywords of your query seem to be: %s\n\n'\
+                   'Here are the related posts we found:' % impt_words
+        for pid in ','.split(post_list):
+            post = r.submission(pid)
+            my_reply += '* [' + post.title + '](' + post.permalink + ')\n'
     except faqhelper.NoRelations:
-        my_reply = 'Sorry, bud, no dice.'
+        my_reply = 'Unfortunately, we were not able to identify any posts that match your query.'
     return my_reply
 
 
@@ -442,19 +446,24 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
             # literally nothing is related, so there's nothing we can do here
             mark_as_processed(post_id)
             return ''
-    else:
+    elif len(text_set) > 0:
         try:
             list_of_related_posts, keyword_list = handle_query(text_array, text_set)
         except faqhelper.NoRelations:
             # nothing is related
             mark_as_processed(post_id)
             return ''
+    else:
+        # there's literally nothing in this post
+        mark_as_processed(post_id)
+        return ''
     output_data: Dict[str, Union[Union[List[Any], int, praw.models.Comment], Any]] = {
         'title': [],
         'url': [],
         'top_cmt_votes': 0,
         'top_cmt': None
     }
+
     for pid in list_of_related_posts:
         thread: praw.models.Submission = r.submission(pid)
         try:
@@ -588,11 +597,11 @@ def process_comment(cmt):
     return
 
 
-def handle_query(tarray: list, tset: set):
+def handle_query(tarray: list, tset: set, ignore_min_links: bool = False):
     global db, MIN_LINKS
     if tarray is None or tset is None:
-        # TODO: raise bad parameter exception of some kind
-        pass
+        # this hasn't been handled correctly, so raise an error to notify the administrator
+        raise SyntaxError
     # now handle query array
     cursor = db.cursor()
     tarray = ['\'{0}\''.format(element) for element in tarray]
@@ -601,7 +610,7 @@ def handle_query(tarray: list, tset: set):
     related = ret[1]
     important = ret[2]
     cursor.close()
-    if related is None or len(related) < MIN_LINKS:
+    if related is None or (not ignore_min_links and len(related) < MIN_LINKS):
         raise faqhelper.NoRelations
     return related.split(','), important
 
@@ -800,7 +809,7 @@ def get_stream(**kwargs) -> praw.models.util.stream_generator:
     results.extend(r.inbox.comment_replies())
     results.extend(r.inbox.mentions())
     results.sort(key=lambda post: post.created_utc, reverse=True)
-    return praw.models.util.stream_generator(lambda **kwargs: results, pause_after=-1, **kwargs)
+    return praw.models.util.stream_generator(lambda **kwargs: results, **kwargs)
 # endregion
 
 
@@ -860,7 +869,7 @@ def main_loop():
         MIN_LINKS = get_setting('minlinks', 3)
         print("Initial load done")
         while True:
-            callers = get_stream()
+            callers = get_stream(pause_after=-1)
             for caller in callers:
                 if isinstance(caller, praw.models.Message):
                     handle_command_message(caller)
@@ -891,7 +900,12 @@ def main_loop():
                     caller.delete()
             # review old comments looking for downvotes
             my_old_comments = r.redditor(config.REDDIT_USER).comments()
+            counter = 0
+            # TODO: make this do what it should
             for old_comment in my_old_comments:
+                counter += 1
+                if counter > 5:
+                    break
                 testing_text = old_comment.permalink + "\n\n" + old_comment.score
                 r.redditor(config.ADMIN_USER).message('OLD COMMENT', testing_text)
                 if old_comment.score < -5:
