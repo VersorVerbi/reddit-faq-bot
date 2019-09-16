@@ -883,7 +883,7 @@ def main_loop():
             # review old comments looking for downvotes
             my_old_comments = r.redditor(config.REDDIT_USER).comments.new(limit=1000)
             for old_comment in my_old_comments:
-                testing_text = old_comment.permalink + "\n\n" + old_comment.score
+                testing_text = old_comment.permalink + "\n\n" + str(old_comment.score)
                 r.redditor(config.ADMIN_USER).message('OLD COMMENT', testing_text)
                 if old_comment.score < -5:
                     # old_comment.delete()
