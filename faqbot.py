@@ -436,6 +436,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
             list_of_related_posts: List[str] = related_posts(post_id)
         except faqhelper.NoRelations:
             # literally nothing is related, so there's nothing we can do here
+            print("Ignored with no relations")
             mark_as_processed(post_id)
             return ''
     else:
@@ -443,6 +444,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
             list_of_related_posts, keyword_list = handle_query(text_array, text_set)
         except faqhelper.NoRelations:
             # nothing is related
+            print("Ignored with no relations")
             mark_as_processed(post_id)
             return ''
     output_data: Dict[str, Union[Union[List[Any], int, praw.models.Comment], Any]] = {
