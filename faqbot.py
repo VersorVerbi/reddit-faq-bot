@@ -863,7 +863,7 @@ def main_loop():
         MIN_LINKS = get_setting('minlinks', 3)
         print("Initial load done")
         while True:
-            callers = get_stream(pause_after=-1)
+            callers = get_stream(pause_after=0)
             for caller in callers:
                 if caller is None:
                     break
@@ -891,17 +891,9 @@ def main_loop():
                     caller.delete()
             # review old comments looking for downvotes
             my_old_comments = r.redditor(config.REDDIT_USER).comments.new(limit=1000)
-            counter = 0
-            # TODO: make this do what it should
             for old_comment in my_old_comments:
-                counter += 1
-                if counter > 5:
-                    break
-                testing_text = old_comment.permalink + "\n\n" + str(old_comment.score)
-                r.redditor(config.ADMIN_USER).message('OLD COMMENT', testing_text)
                 if old_comment.score < -5:
-                    # old_comment.delete()
-                    pass
+                    old_comment.delete()
     except mysql.connector.OperationalError:
         err_data = sys.exc_info()
         print(err_data)
