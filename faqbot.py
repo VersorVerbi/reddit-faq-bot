@@ -368,16 +368,12 @@ def test_results(pid_to_test):
         message = process_post(post, False, True)
     except faqhelper.IgnoredFlair:
         message = "Post %s has a flair that is set to be ignored." % pid_to_test
-        pass
     except faqhelper.IgnoredTitle:
         message = "Post %s has text in the title that is set to be ignored." % pid_to_test
-        pass
     except faqhelper.IncorrectPostType:
         message = "Post %s is a stickied post or a link post, so it is set to be ignored." % pid_to_test
-        pass
     except faqhelper.WrongSubreddit:
         message = "Post %s is not on the r/%s subreddit." % (pid_to_test, config.SUBREDDIT)
-        pass
     return "Test results for post (%s)[%s] (PID: %s)\n\n------\n\n%s" % \
            (post.title, post.permalink, pid_to_test, message)
 # endregion
@@ -391,7 +387,7 @@ def related_posts(post_id):
     ret = cursor.callproc('relatedPosts', args)
     related = ret[1]
     cursor.close()
-    if related is None or len(related) < MIN_LINKS:
+    if related is None or len(related.split(',')) < MIN_LINKS:
         raise faqhelper.NoRelations
     return related.split(',')
 
@@ -444,6 +440,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
             list_of_related_posts: List[str] = related_posts(post_id)
         except faqhelper.NoRelations:
             # literally nothing is related, so there's nothing we can do here
+            print("Ignored with no relations")
             mark_as_processed(post_id)
             return ''
     elif len(text_set) > 0:
@@ -451,6 +448,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
             list_of_related_posts, keyword_list = handle_query(text_array, text_set)
         except faqhelper.NoRelations:
             # nothing is related
+            print("Ignored with no relations")
             mark_as_processed(post_id)
             return ''
     else:
@@ -610,7 +608,7 @@ def handle_query(tarray: list, tset: set, ignore_min_links: bool = False):
     related = ret[1]
     important = ret[2]
     cursor.close()
-    if related is None or (not ignore_min_links and len(related) < MIN_LINKS):
+    if related is None or (not ignore_min_links and len(related.split(',')) < MIN_LINKS):
         raise faqhelper.NoRelations
     return related.split(','), important
 
@@ -842,20 +840,16 @@ def handle_command_message(msg):
                 exec(code_to_exec, globals(), locals())
             except mysql.connector.Error:
                 reply_message = sql_failure()
-                pass
             except (faqhelper.MissingParameter, faqhelper.MismatchedParameter, IndexError):
                 reply_message = invalid_params(cmd)
-                pass
             except (faqhelper.BadParameter, faqhelper.IncorrectState, faqhelper.WrongSubreddit):
                 reply_message = improper_params(cmd[0])
-                pass
             try:
                 code_to_exec = 'global reply_message; reply_message = '\
                                + switch(faqhelper.ADMIN_REPLIES, '-1', cmd[0].upper())
                 exec(code_to_exec, globals(), locals())
             except IndexError:
                 reply_message = invalid_params(cmd)
-                pass
         reply_message += admin_signature()
     msg.reply(reply_message)
     return
@@ -871,6 +865,8 @@ def main_loop():
         while True:
             callers = get_stream(pause_after=-1)
             for caller in callers:
+                if caller is None:
+                    break
                 if isinstance(caller, praw.models.Message):
                     handle_command_message(caller)
                 elif isinstance(caller, praw.models.Submission):
@@ -878,19 +874,14 @@ def main_loop():
                         process_post(caller)
                     except faqhelper.IgnoredFlair:
                         print("Ignored by flair")
-                        pass
                     except faqhelper.IgnoredTitle:
                         print("Ignored by title")
-                        pass
                     except faqhelper.IncorrectPostType:
                         print("Ignored as sticky or link")
-                        pass
                     except faqhelper.WrongSubreddit:
                         print("Ignored as on wrong subreddit")
-                        pass
                     except faqhelper.AlreadyProcessed:
                         print("Ignored as already processed")
-                        pass
                 else:
                     process_comment(caller)
                 if len(VALID_ADMINS) > 1:
@@ -899,14 +890,14 @@ def main_loop():
                 if isinstance(caller, praw.models.Message):
                     caller.delete()
             # review old comments looking for downvotes
-            my_old_comments = r.redditor(config.REDDIT_USER).comments()
+            my_old_comments = r.redditor(config.REDDIT_USER).comments.new(limit=1000)
             counter = 0
             # TODO: make this do what it should
             for old_comment in my_old_comments:
                 counter += 1
                 if counter > 5:
                     break
-                testing_text = old_comment.permalink + "\n\n" + old_comment.score
+                testing_text = old_comment.permalink + "\n\n" + str(old_comment.score)
                 r.redditor(config.ADMIN_USER).message('OLD COMMENT', testing_text)
                 if old_comment.score < -5:
                     # old_comment.delete()
@@ -917,13 +908,11 @@ def main_loop():
         db.close()
         sleep(2)
         db = get_mysql_connection()
-        pass
     except praw.exceptions.PRAWException:
         err_data = sys.exc_info()
         print(err_data)
         r = None
         r = get_reddit()
-        pass
     except Exception as e:
         db.close()
         err_data = sys.exc_info()
