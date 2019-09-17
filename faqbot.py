@@ -17,6 +17,7 @@ reply_message: str = ''
 replacement: str = ''
 subr: praw.models.Subreddit = None
 MIN_LINKS: int = 3
+DISABLE_COMMENT_QUOTING: bool = True
 # endregion
 
 
@@ -163,7 +164,8 @@ def add_favorite(new_favorite):
     elif r.submission(new_favorite) is None:
         raise faqhelper.MismatchedParameter
     elif not post_from_our_subreddit(r.submission(new_favorite)):
-        raise faqhelper.WrongSubreddit
+        # raise faqhelper.WrongSubreddit
+        pass  # TODO undo this
     cursor = execute_sql('SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s', {'pid': new_favorite})
     if cursor.fetchone()[0] > 0:
         raise faqhelper.IncorrectState
@@ -181,7 +183,8 @@ def remove_favorite(fav_to_remove):
     elif r.submission(fav_to_remove) is None:
         raise faqhelper.MismatchedParameter
     elif not post_from_our_subreddit(r.submission(fav_to_remove)):
-        raise faqhelper.WrongSubreddit
+        # raise faqhelper.WrongSubreddit
+        pass  # TODO undo this
     cursor = execute_sql('SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s', {'pid': fav_to_remove})
     if cursor.fetchone()[0] <= 0:
         raise faqhelper.IncorrectState
@@ -507,26 +510,27 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
 
 
 def post_analysis_message(keyword_list, output_data):
-    global replacement
+    global replacement, DISABLE_COMMENT_QUOTING
     reply_body = 'Our analysis of this post indicates that the keywords are: ' + keyword_list + '\n\n'
     reply_body += 'Here are some other posts that are related:\n\n'
     comment_body = ''
     for title, url in zip(output_data['title'], output_data['url']):
         reply_body += '* [' + title + '](' + url + ')\n'
-    reply_body += '\nThe top-voted comment from those threads is this one:\n\n'
-    if (output_data['top_cmt']) is not None:
-        comment_body = output_data['top_cmt'].body
-        replacement = '\n\n> '
-        replace_pattern = '\n\n'
-        comment_body = re.sub(replace_pattern, remove_nonalpha, comment_body)
     reply_signature = user_signature(True)
-    if len(reply_body) + len(comment_body) + len(reply_signature) > 9999 and len(comment_body) > 0:
-        # don't have multi-line links, but don't have too many characters, either
-        comment_body = comment_body.split('\n')[0]
-        reply_body += '* [' + comment_body[:50] + '...](https://np.reddit.com' + output_data['top_cmt'].permalink + ')'
-    else:
-        # the first line didn't have any line breaks, so we need to add another quote marker there
-        reply_body += '>' + comment_body
+    if not DISABLE_COMMENT_QUOTING:
+        reply_body += '\nThe top-voted comment from those threads is this one:\n\n'
+        if output_data['top_cmt'] is not None:
+            comment_body = output_data['top_cmt'].body
+            replacement = '\n\n> '
+            replace_pattern = '\n\n'
+            comment_body = re.sub(replace_pattern, remove_nonalpha, comment_body)
+        if len(reply_body) + len(comment_body) + len(reply_signature) > 9999 and len(comment_body) > 0:
+            # don't have multi-line links, but don't have too many characters, either
+            comment_body = comment_body.split('\n')[0]
+            reply_body += '* [' + comment_body[:50] + '...](https://np.reddit.com' + output_data['top_cmt'].permalink + ')'
+        else:
+            # the first line didn't have any line breaks, so we need to add another quote marker there
+            reply_body += '>' + comment_body
     reply_body += reply_signature
     return reply_body
 
