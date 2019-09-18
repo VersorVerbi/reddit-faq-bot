@@ -164,8 +164,7 @@ def add_favorite(new_favorite):
     elif r.submission(new_favorite) is None:
         raise faqhelper.MismatchedParameter
     elif not post_from_our_subreddit(r.submission(new_favorite)):
-        # raise faqhelper.WrongSubreddit
-        pass  # TODO undo this
+        raise faqhelper.WrongSubreddit
     cursor = execute_sql('SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s', {'pid': new_favorite})
     if cursor.fetchone()[0] > 0:
         raise faqhelper.IncorrectState
@@ -183,8 +182,7 @@ def remove_favorite(fav_to_remove):
     elif r.submission(fav_to_remove) is None:
         raise faqhelper.MismatchedParameter
     elif not post_from_our_subreddit(r.submission(fav_to_remove)):
-        # raise faqhelper.WrongSubreddit
-        pass  # TODO undo this
+        raise faqhelper.WrongSubreddit
     cursor = execute_sql('SELECT SUM(posts.modFavorite) FROM posts WHERE posts.id = %(pid)s', {'pid': fav_to_remove})
     if cursor.fetchone()[0] <= 0:
         raise faqhelper.IncorrectState
@@ -377,6 +375,9 @@ def test_results(pid_to_test):
         message = "Post %s is a stickied post or a link post, so it is set to be ignored." % pid_to_test
     except faqhelper.WrongSubreddit:
         message = "Post %s is not on the r/%s subreddit." % (pid_to_test, config.SUBREDDIT)
+    except faqhelper.NoRelations as nr:
+        message = "Post %s has these keywords: %s\n\nBut we could find no related posts." % \
+                  (pid_to_test, nr.keyword_list)
     return "Test results for post (%s)[%s] (PID: %s)\n\n------\n\n%s" % \
            (post.title, post.permalink, pid_to_test, message)
 # endregion
@@ -391,7 +392,7 @@ def related_posts(post_id):
     related = ret[1]
     cursor.close()
     if related is None or len(related.split(',')) < MIN_LINKS:
-        raise faqhelper.NoRelations
+        raise faqhelper.NoRelations('')
     return related.split(',')
 
 
@@ -443,14 +444,18 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
             list_of_related_posts: List[str] = related_posts(post_id)
         except faqhelper.NoRelations:
             # literally nothing is related, so there's nothing we can do here
+            if not reply_to_thread:
+                raise faqhelper.NoRelations(keyword_list)
             print("Ignored with no relations")
             mark_as_processed(post_id)
             return ''
     elif len(text_set) > 0:
         try:
             list_of_related_posts, keyword_list = handle_query(text_array, text_set)
-        except faqhelper.NoRelations:
+        except faqhelper.NoRelations as nr:
             # nothing is related
+            if not reply_to_thread:
+                raise nr
             print("Ignored with no relations")
             mark_as_processed(post_id)
             return ''
@@ -541,11 +546,12 @@ def process_comment(cmt):
         return
     if post_is_processed(cmt.id):
         return
-    if cmt.subreddit.name.lower() != config.SUBREDDIT.lower() or\
-            'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():
+    if 'u/' + config.REDDIT_USER.lower() not in cmt.body.lower(): #post_from_our_subreddit(cmt) or\
+            #'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():
         # ignore comments calling us in other subreddits and replying to our comments
         mark_as_processed(cmt.id)
         return
+    # TODO: undo this
     # we have been summoned
     cursor = execute_sql('INSERT IGNORE INTO posts (id) VALUES (%(pid)s)', {'pid': cmt.id})
     db.commit()
@@ -558,11 +564,11 @@ def process_comment(cmt):
         text_set.remove('u')
     if config.REDDIT_USER.lower() not in text_array:
         text_set.remove(config.REDDIT_USER.lower())
-    if len(text_set) > 0:
-        list_of_posts, list_of_keywords = handle_query(text_array, text_set)
-    else:
-        target = cmt.parent()
-        try:
+    try:
+        if len(text_set) > 0:
+            list_of_posts, list_of_keywords = handle_query(text_array, text_set)
+        else:
+            target = cmt.parent()
             if isinstance(target, praw.models.Submission):
                 try:
                     comment_reply = process_post(target, False, True)
@@ -580,9 +586,10 @@ def process_comment(cmt):
             else:
                 ptitle, text_array, text_set = prepare_post_text(target)
                 list_of_posts, list_of_keywords = handle_query(text_array, text_set)
-        except faqhelper.NoRelations:
-            comment_reply += 'Unfortunately, I was unable to find any relevant posts in this case.'
-            comment_reply += user_signature(True)
+    except faqhelper.NoRelations as nr:
+        comment_reply = 'I identified the following keywords: %s' % nr.keyword_list
+        comment_reply += 'Unfortunately, I was unable to find any relevant posts in this case.'
+        comment_reply += user_signature(True)
     comment_reply = 'Thanks for using the Catholic FAQ Bot!\n\n' + comment_reply
     if len(list_of_keywords) > 0 and len(list_of_posts) > 0:
         comment_reply += 'Our analysis indicates that the keywords are: ' + list_of_keywords
@@ -613,7 +620,7 @@ def handle_query(tarray: list, tset: set, ignore_min_links: bool = False):
     important = ret[2]
     cursor.close()
     if related is None or (not ignore_min_links and len(related.split(',')) < MIN_LINKS):
-        raise faqhelper.NoRelations
+        raise faqhelper.NoRelations(important)
     return related.split(','), important
 
 
