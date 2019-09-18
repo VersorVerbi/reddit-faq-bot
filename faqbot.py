@@ -76,9 +76,9 @@ def execute_sql_file(filename):
 
 def execute_sql(sql: str, params: object = None, multi: bool = False):
     global db
-    retry = False
+    retry = True
     cursor = None
-    while True:
+    while retry:
         try:
             cursor = db.cursor()
             cursor.execute(sql, params=params, multi=multi)
@@ -392,7 +392,7 @@ def related_posts(post_id):
     related = ret[1]
     cursor.close()
     if related is None or len(related.split(',')) < MIN_LINKS:
-        raise faqhelper.NoRelations('')
+        raise faqhelper.NoRelations(keys='')
     return related.split(',')
 
 
@@ -439,13 +439,13 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
         if exists_row is None:
             token_counting(post, post_title, text_array, text_set)
         cursor.close()
+        keyword_list: str = post_keywords(post_id)
         try:
-            keyword_list: str = post_keywords(post_id)
             list_of_related_posts: List[str] = related_posts(post_id)
         except faqhelper.NoRelations:
             # literally nothing is related, so there's nothing we can do here
             if not reply_to_thread:
-                raise faqhelper.NoRelations(keyword_list)
+                raise faqhelper.NoRelations(keys=keyword_list)
             print("Ignored with no relations")
             mark_as_processed(post_id)
             return ''
@@ -493,10 +493,10 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
                 output_data['top_cmt'] = top_comment
     reply_body = post_analysis_message(keyword_list, output_data)
     if reply_to_thread:
-        retry: bool = False
+        retry: bool = True
         # TODO: remove testing code here+1 and here+5
         reply_body = "Test reply for [%s](%s)\n\n------\n\n%s" % (post.title, post.permalink, reply_body)
-        while True:
+        while retry:
             try:
                 # post_reply(post, reply_body)
                 post_reply(r.submission('co5du1'), reply_body)  # test post for examining replies in public
@@ -558,12 +558,14 @@ def process_comment(cmt):
     cursor.close()
     comment_reply, list_of_posts, list_of_keywords = '', '', ''
     ptitle, text_array, text_set = prepare_post_text(cmt)
+    print(text_array)
     text_array.remove('u')
     text_array.remove(config.REDDIT_USER.lower())
     if 'u' not in text_array:
         text_set.remove('u')
     if config.REDDIT_USER.lower() not in text_array:
         text_set.remove(config.REDDIT_USER.lower())
+    print(text_array)
     try:
         if len(text_set) > 0:
             list_of_posts, list_of_keywords = handle_query(text_array, text_set)
@@ -587,7 +589,7 @@ def process_comment(cmt):
                 ptitle, text_array, text_set = prepare_post_text(target)
                 list_of_posts, list_of_keywords = handle_query(text_array, text_set)
     except faqhelper.NoRelations as nr:
-        comment_reply = 'I identified the following keywords: %s' % nr.keyword_list
+        comment_reply = 'I identified the following keywords: %s\n\n' % nr.keyword_list
         comment_reply += 'Unfortunately, I was unable to find any relevant posts in this case.'
         comment_reply += user_signature(True)
     comment_reply = 'Thanks for using the Catholic FAQ Bot!\n\n' + comment_reply
@@ -601,7 +603,18 @@ def process_comment(cmt):
             ptitle = post.title
             comment_reply += '*[' + ptitle + '](' + plink + ')\n\n'
         comment_reply += user_signature(True)
-    cmt.reply(comment_reply)
+    retry = True
+    while retry:
+        try:
+            cmt.reply(comment_reply)
+            retry = False
+        except praw.exceptions.APIException as e:
+            if e.field.lower() == 'ratelimit':
+                minutes = get_numbers(e.message)[0]
+                sleep((minutes + 1) * 60)
+                retry = True
+            else:
+                raise e
     mark_as_processed(cmt.id)
     return
 
@@ -620,7 +633,7 @@ def handle_query(tarray: list, tset: set, ignore_min_links: bool = False):
     important = ret[2]
     cursor.close()
     if related is None or (not ignore_min_links and len(related.split(',')) < MIN_LINKS):
-        raise faqhelper.NoRelations(important)
+        raise faqhelper.NoRelations(keys=important)
     return related.split(','), important
 
 

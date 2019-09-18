@@ -111,7 +111,7 @@ class NoRelations(Error):
     """no related posts could be found"""
     keyword_list: str = ""
 
-    def __init__(self, args):
-        self.keyword_list = args[0]
+    def __init__(self, **kwargs):
+        self.keyword_list = kwargs['keys']
     pass
 # endregion
