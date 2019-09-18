@@ -546,8 +546,7 @@ def process_comment(cmt):
         return
     if post_is_processed(cmt.id):
         return
-    if 'u/' + config.REDDIT_USER.lower() not in cmt.body.lower(): #post_from_our_subreddit(cmt) or\
-            #'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():
+    if post_from_our_subreddit(cmt) or 'u/' + config.REDDIT_USER.lower() not in cmt.body.lower():
         # ignore comments calling us in other subreddits and replying to our comments
         mark_as_processed(cmt.id)
         return

@@ -39,7 +39,7 @@ BEGIN
     DROP TABLE IF EXISTS related_posts;
 END
 
-CREATE PROCEDURE `queryRelated` (IN `wordList` VARCHAR(2516), OUT postList VARCHAR(20) CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci, OUT )
+CREATE PROCEDURE `queryRelated` (IN `wordList` VARCHAR(2516), OUT postList VARCHAR(20) CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci, OUT outList VARCHAR(2516) CHARSET utf8mb4 COLLATE utf8mb4_unicode_ci)
 BEGIN
     DECLARE linkLimit INT DEFAULT 5;
     DECLARE keyLimit INT DEFAULT 5;
@@ -71,8 +71,6 @@ BEGIN
         FROM keywords
         WHERE keywords.tokenID IN
             (SELECT tid FROM query_keys AS source_token_list);
-
-    DELETE FROM rel_posts WHERE tfIdf < 1;
 
     SELECT GROUP_CONCAT(pid SEPARATOR ',') INTO postList FROM (
         SELECT pid, (SUM(tfIdf) / keyLimit) AS tfIdfAvg from rel_posts WHERE pid IN (
