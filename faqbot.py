@@ -238,13 +238,15 @@ def admin_signature():
 
 
 def user_signature(is_public=False):
-    output = '\n\n------\n\n'
+    output = '\n\n------\n\n^^I ^^am ^^a ^^robot ^^and ^^this ^^action ^^was ^^performed ^^automatically.\n\n'
     if is_public:
-        output += '^^Reply ^^with ^^`delete` ^^to ^^delete ^^\(mods ^^and ^^OP ^^only.)\n\n'
+        output += '^^If ^^what ^^I ^^have ^^done ^^is ^^wrong ^^or ^^inappropriate, ^^downvote ^^me ^^below ^^zero ' \
+                  '^^and ^^I\'ll ^^delete ^^this ^^comment.'
     output += '^^Tag ^^me ^^with ^^a ^^query ^^to ^^get ^^my ^^response, ^^or ^^just ^^tag ^^me ^^to ^^get ^^my ' \
               '^^response ^^to ^^the ^^parent ^^comment/post.\n\n'
     output += '^^PM ^^me ^^a ^^query ^^for ^^a ^^private ^^response.\n\n'
-    output += '^^PM ^^/u\/' + config.ADMIN_USER + ' ^^with ^^questions, ^^comments, ^^or ^^bug ^^reports.'
+    output += '^^PM ^^[' + config.ADMIN_USER + '](https://www.reddit.com/u/' + config.ADMIN_USER + ') ^^with ' \
+              '^^questions, ^^comments, ^^or ^^bug ^^reports.'
     return output
 # endregion
 
@@ -348,12 +350,12 @@ def query_results(msg):
     try:
         post_list, impt_words = handle_query(text_array, text_set, True)
         my_reply = 'The keywords of your query seem to be: %s\n\n'\
-                   'Here are the related posts we found:' % impt_words
+                   'Here are the related posts I found:' % impt_words
         for pid in ','.split(post_list):
             post = r.submission(pid)
             my_reply += '* [' + post.title + '](' + post.permalink + ')\n'
     except faqhelper.NoRelations:
-        my_reply = 'Unfortunately, we were not able to identify any posts that match your query.'
+        my_reply = 'Unfortunately, I was not able to identify any posts that match your query.'
     return my_reply
 
 
@@ -376,7 +378,7 @@ def test_results(pid_to_test):
     except faqhelper.WrongSubreddit:
         message = "Post %s is not on the r/%s subreddit." % (pid_to_test, config.SUBREDDIT)
     except faqhelper.NoRelations as nr:
-        message = "Post %s has these keywords: %s\n\nBut we could find no related posts." % \
+        message = "Post %s has these keywords: %s\n\nBut I could find no related posts." % \
                   (pid_to_test, nr.keyword_list)
     return "Test results for post (%s)[%s] (PID: %s)\n\n------\n\n%s" % \
            (post.title, post.permalink, pid_to_test, message)
@@ -494,12 +496,9 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
     reply_body = post_analysis_message(keyword_list, output_data)
     if reply_to_thread:
         retry: bool = True
-        # TODO: remove testing code here+1 and here+5
-        reply_body = "Test reply for [%s](%s)\n\n------\n\n%s" % (post.title, post.permalink, reply_body)
         while retry:
             try:
-                # post_reply(post, reply_body)
-                post_reply(r.submission('co5du1'), reply_body)  # test post for examining replies in public
+                post_reply(post, reply_body)
                 retry = False
             except praw.exceptions.APIException as e:
                 if e.field.lower() == 'ratelimit':
@@ -532,7 +531,8 @@ def post_analysis_message(keyword_list, output_data):
         if len(reply_body) + len(comment_body) + len(reply_signature) > 9999 and len(comment_body) > 0:
             # don't have multi-line links, but don't have too many characters, either
             comment_body = comment_body.split('\n')[0]
-            reply_body += '* [' + comment_body[:50] + '...](https://np.reddit.com' + output_data['top_cmt'].permalink + ')'
+            reply_body += '* [' + comment_body[:50] + '...](https://np.reddit.com' + \
+                          output_data['top_cmt'].permalink + ')'
         else:
             # the first line didn't have any line breaks, so we need to add another quote marker there
             reply_body += '>' + comment_body
@@ -550,7 +550,6 @@ def process_comment(cmt):
         # ignore comments calling us in other subreddits and replying to our comments
         mark_as_processed(cmt.id)
         return
-    # TODO: undo this
     # we have been summoned
     cursor = execute_sql('INSERT IGNORE INTO posts (id) VALUES (%(pid)s)', {'pid': cmt.id})
     db.commit()
@@ -915,7 +914,7 @@ def main_loop():
             # review old comments looking for downvotes
             my_old_comments = r.redditor(config.REDDIT_USER).comments.new(limit=1000)
             for old_comment in my_old_comments:
-                if old_comment.score < -5:
+                if old_comment.score < 0:
                     old_comment.delete()
     except mysql.connector.OperationalError:
         err_data = sys.exc_info()
