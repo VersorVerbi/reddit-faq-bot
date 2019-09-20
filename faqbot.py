@@ -387,15 +387,22 @@ def test_results(pid_to_test):
 
 # region analysis functions
 def related_posts(post_id):
-    global db, MIN_LINKS
+    global db, MIN_LINKS, subr
     cursor = db.cursor()
     args = (post_id, None)
     ret = cursor.callproc('relatedPosts', args)
     related = ret[1]
+    if related is not None:
+        related = related.split(',')
     cursor.close()
-    if related is None or len(related.split(',')) < MIN_LINKS:
-        raise faqhelper.NoRelations(keys='')
-    return related.split(',')
+    if related is None or len(related) < MIN_LINKS:
+        keywords = post_keywords(post_id)
+        search_results = subr.search(keywords, limit=get_setting('numlinks'))
+        for post in search_results:
+            related.add(post.id)
+        if related is None or len(related) < MIN_LINKS:
+            raise faqhelper.NoRelations(keys=keywords)
+    return related
 
 
 def post_keywords(post_id):
@@ -444,10 +451,10 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
         keyword_list: str = post_keywords(post_id)
         try:
             list_of_related_posts: List[str] = related_posts(post_id)
-        except faqhelper.NoRelations:
+        except faqhelper.NoRelations as nr:
             # literally nothing is related, so there's nothing we can do here
             if not reply_to_thread:
-                raise faqhelper.NoRelations(keys=keyword_list)
+                raise nr
             print("Ignored with no relations")
             mark_as_processed(post_id)
             return ''
@@ -618,7 +625,7 @@ def process_comment(cmt):
 
 
 def handle_query(tarray: list, tset: set, ignore_min_links: bool = False):
-    global db, MIN_LINKS
+    global db, MIN_LINKS, subr
     if tarray is None or tset is None:
         # this hasn't been handled correctly, so raise an error to notify the administrator
         raise SyntaxError
@@ -628,11 +635,17 @@ def handle_query(tarray: list, tset: set, ignore_min_links: bool = False):
     args = (','.join(tarray), None, None)
     ret = cursor.callproc('queryRelated', args)
     related = ret[1]
+    if related is not None:
+        related = related.split(',')
     important = ret[2]
     cursor.close()
-    if related is None or (not ignore_min_links and len(related.split(',')) < MIN_LINKS):
-        raise faqhelper.NoRelations(keys=important)
-    return related.split(','), important
+    if related is None or (not ignore_min_links and len(related) < MIN_LINKS):
+        search_results = subr.search(important, limit=get_setting('numlinks'))
+        for post in search_results:
+            related.add(post.id)
+        if related is None or (not ignore_min_links and len(related) < MIN_LINKS):
+            raise faqhelper.NoRelations(keys=important)
+    return related, important
 
 
 def retrieve_token_counts(submissions):
