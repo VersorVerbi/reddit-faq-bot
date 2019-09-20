@@ -80,7 +80,7 @@ def execute_sql(sql: str, params: object = None, multi: bool = False):
     cursor = None
     while retry:
         try:
-            cursor = db.cursor()
+            cursor = db.cursor(buffered=True)
             cursor.execute(sql, params=params, multi=multi)
             retry = False
         except mysql.connector.errors.OperationalError:
@@ -111,7 +111,7 @@ def reset_all_settings():
     return
 
 
-def get_setting(setting_name: str, default_val):
+def get_setting(setting_name: str, default_val=None):
     global db
     cursor = execute_sql("SELECT `value` FROM settings WHERE `descriptor` = %(desc)s;", {'desc': setting_name})
     setting_value = cursor.fetchone()
@@ -776,12 +776,16 @@ def prepare_post_text(post):
 
 def search_instead(keywords, current_post_list, ignore_minimum: bool = False):
     global subr, MIN_LINKS
+    link_limit = get_setting('numlinks')
     if current_post_list is None:
         current_post_list = []
-    for result in subr.search(keywords, limit=get_setting('numlinks')):
+    for result in subr.search(keywords, limit=link_limit):
         current_post_list.append(result.id)
     if not ignore_minimum and current_post_list < MIN_LINKS:
         raise faqhelper.NoRelations(keys=keywords)
+    list_len = len(current_post_list)
+    if list_len > link_limit:
+        del current_post_list[link_limit:list_len]
     return current_post_list
 # endregion
 
@@ -931,6 +935,8 @@ def main_loop():
             my_old_comments = r.redditor(config.REDDIT_USER).comments.new(limit=1000)
             for old_comment in my_old_comments:
                 if old_comment.score < 0:
+                    r.redditor(config.ADMIN_USER).message('Deleted Reply',
+                                                          old_comment.parent.permalink + '\n\n' + old_comment.body)
                     old_comment.delete()
     except mysql.connector.OperationalError:
         err_data = sys.exc_info()
