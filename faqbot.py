@@ -397,11 +397,7 @@ def related_posts(post_id):
     cursor.close()
     if related is None or len(related) < MIN_LINKS:
         keywords = post_keywords(post_id)
-        search_results = subr.search(keywords, limit=get_setting('numlinks'))
-        for post in search_results:
-            related.add(post.id)
-        if related is None or len(related) < MIN_LINKS:
-            raise faqhelper.NoRelations(keys=keywords)
+        related = search_instead(keywords, related)
     return related
 
 
@@ -640,11 +636,7 @@ def handle_query(tarray: list, tset: set, ignore_min_links: bool = False):
     important = ret[2]
     cursor.close()
     if related is None or (not ignore_min_links and len(related) < MIN_LINKS):
-        search_results = subr.search(important, limit=get_setting('numlinks'))
-        for post in search_results:
-            related.add(post.id)
-        if related is None or (not ignore_min_links and len(related) < MIN_LINKS):
-            raise faqhelper.NoRelations(keys=important)
+        related = search_instead(important, related, ignore_min_links)
     return related, important
 
 
@@ -780,6 +772,17 @@ def prepare_post_text(post):
     text_array = post_title.split() + post_text.split()
     text_set = set(text_array)  # gets only one instance of each unique token
     return post_title, text_array, text_set
+
+
+def search_instead(keywords, current_post_list, ignore_minimum: bool = False):
+    global subr, MIN_LINKS
+    if current_post_list is None:
+        current_post_list = []
+    for result in subr.search(keywords, limit=get_setting('numlinks')):
+        current_post_list.append(result.id)
+    if not ignore_minimum and current_post_list < MIN_LINKS:
+        raise faqhelper.NoRelations(keys=keywords)
+    return current_post_list
 # endregion
 
 
