@@ -9,6 +9,7 @@ from time import sleep
 from spell import spell
 from config import constants as config
 from config import faqhelper
+from http import HTTPStatus
 
 
 # region globals
@@ -783,6 +784,7 @@ def search_instead(keywords, current_post_list, ignore_minimum: bool = False):
         current_post_list.append(result.id)
     if not ignore_minimum and current_post_list < MIN_LINKS:
         raise faqhelper.NoRelations(keys=keywords)
+    current_post_list = set(current_post_list)
     list_len = len(current_post_list)
     if list_len > link_limit:
         del current_post_list[link_limit:list_len]
@@ -996,11 +998,20 @@ if fullReset:
     db.commit()
     reset_cursor.close()
     reset_cursor = execute_sql("SELECT id FROM posts;")
+    posts_to_delete = []
     for row in reset_cursor:
         curpost = r.submission(row[0])
-        title, reset_text_array, reset_text_set = prepare_post_text(curpost)
-        token_counting(curpost, title, reset_text_array, reset_text_set)
+        try:
+            title, reset_text_array, reset_text_set = prepare_post_text(curpost)
+            token_counting(curpost, title, reset_text_array, reset_text_set)
+        except HTTPStatus:
+            posts_to_delete.append(curpost.id)
+            continue
     reset_cursor.close()
+    sql_delete = '\'' + '\',\''.join(posts_to_delete) + '\''
+    delete_cursor = execute_sql('DELETE FROM `posts` WHERE id IN %(pids)s', {'pid': sql_delete})
+    db.commit()
+    delete_cursor.close()
     reset_all_settings()
 
 main_loop()
