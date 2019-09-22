@@ -777,7 +777,7 @@ def prepare_post_text(post):
 
 def search_instead(keywords, current_post_list, ignore_minimum: bool = False):
     global subr, MIN_LINKS
-    link_limit = get_setting('numlinks')
+    link_limit = int(get_setting('numlinks'))
     if current_post_list is None:
         current_post_list = []
     for result in subr.search(keywords, limit=link_limit):
