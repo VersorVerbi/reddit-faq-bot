@@ -782,9 +782,9 @@ def search_instead(keywords, current_post_list, ignore_minimum: bool = False):
         current_post_list = []
     for result in subr.search(keywords, limit=link_limit):
         current_post_list.append(result.id)
-    if not ignore_minimum and current_post_list < MIN_LINKS:
+    if not ignore_minimum and len(current_post_list) < MIN_LINKS:
         raise faqhelper.NoRelations(keys=keywords)
-    current_post_list = set(current_post_list)
+    current_post_list = list(set(current_post_list))
     list_len = len(current_post_list)
     if list_len > link_limit:
         del current_post_list[link_limit:list_len]
@@ -977,9 +977,14 @@ db = get_mysql_connection()
 if len(sys.argv) > 1:
     fromCrash = (sys.argv[1] != 'initial')
     fullReset = (sys.argv[1] == 'reset')
+    if len(sys.argv) > 2:
+        resumeLast = (sys.argv[2] == 'resume')
+    else:
+        resumeLast = False
 else:
     fromCrash = True
     fullReset = False
+    resumeLast = False
 
 exists_cursor = execute_sql('SHOW TABLES LIKE %(tbl)s', {'tbl': 'keywords'})
 exists = exists_cursor.fetchone()
@@ -999,12 +1004,21 @@ if fullReset:
     reset_cursor.close()
     reset_cursor = execute_sql("SELECT id FROM posts;")
     posts_to_delete = []
+    rwCt = 0
     for row in reset_cursor:
+        rwCt = rwCt + 1		
+        print("{:.4f}%".format(rwCt / reset_cursor.rowcount))		
+        if resumeLast:		
+            check_cursor = execute_sql('SELECT COUNT(*) FROM keywords WHERE id=%(sid)s', { 'sid': row[0] })		
+            check_val = check_cursor.fetchone()		
+            print(check_val)		
+            if check_val:		
+                continue
         curpost = r.submission(row[0])
         try:
             title, reset_text_array, reset_text_set = prepare_post_text(curpost)
             token_counting(curpost, title, reset_text_array, reset_text_set)
-        except HTTPStatus:
+        except HTTPStatus: # don't try to reanalyze posts that have been deleted
             posts_to_delete.append(curpost.id)
             continue
     reset_cursor.close()
