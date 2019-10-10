@@ -1011,8 +1011,7 @@ if fullReset:
         if resumeLast:		
             check_cursor = execute_sql('SELECT COUNT(*) FROM keywords WHERE postId=%(sid)s', { 'sid': row[0] })		
             check_val = check_cursor.fetchone()		
-            print(check_val)		
-            if check_val:		
+            if check_val[0]:
                 continue
         curpost = r.submission(row[0])
         try:
