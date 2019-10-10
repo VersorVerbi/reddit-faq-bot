@@ -9,7 +9,6 @@ from time import sleep
 from spell import spell
 from config import constants as config
 from config import faqhelper
-from http import HTTPStatus
 
 
 # region globals
