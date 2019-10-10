@@ -999,30 +999,31 @@ exists_cursor.close()
     
 if fullReset:
     fromCrash = False
-    reset_cursor = execute_sql("TRUNCATE keywords; TRUNCATE tokens;", multi=True)
-    db.commit()
-    reset_cursor.close()
+    if not resumeLast:
+        reset_cursor = execute_sql("TRUNCATE keywords; DELETE FROM tokens;", multi=True) # MySQL complains if you try to truncate when you have a related foreign key, but you can delete if the foreign key is set up correctly
+        db.commit()
+        reset_cursor.close()
     reset_cursor = execute_sql("SELECT id FROM posts;")
     posts_to_delete = []
     rwCt = 0
     for row in reset_cursor:
-        rwCt = rwCt + 1		
-        print("{:.4f}%".format(rwCt / reset_cursor.rowcount))		
-        if resumeLast:		
-            check_cursor = execute_sql('SELECT COUNT(*) FROM keywords WHERE postId=%(sid)s', { 'sid': row[0] })		
-            check_val = check_cursor.fetchone()		
+        rwCt = rwCt + 1
+        print("{:.2f}%".format(rwCt / reset_cursor.rowcount * 100.0))
+        if resumeLast:
+            check_cursor = execute_sql('SELECT COUNT(*) FROM keywords WHERE postId=%(sid)s', { 'sid': row[0] })
+            check_val = check_cursor.fetchone()
             if check_val[0]:
                 continue
         curpost = r.submission(row[0])
         try:
             title, reset_text_array, reset_text_set = prepare_post_text(curpost)
             token_counting(curpost, title, reset_text_array, reset_text_set)
-        except HTTPStatus: # don't try to reanalyze posts that have been deleted
+        except prawcore.exceptions.NotFound: # don't try to reanalyze posts that have been deleted
             posts_to_delete.append(curpost.id)
             continue
     reset_cursor.close()
     sql_delete = '\'' + '\',\''.join(posts_to_delete) + '\''
-    delete_cursor = execute_sql('DELETE FROM `posts` WHERE id IN %(pids)s', {'pid': sql_delete})
+    delete_cursor = execute_sql('DELETE FROM `posts` WHERE id IN (%(pid)s)', {'pid': sql_delete})
     db.commit()
     delete_cursor.close()
     reset_all_settings()
