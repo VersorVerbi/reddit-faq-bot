@@ -1009,7 +1009,7 @@ if fullReset:
         rwCt = rwCt + 1		
         print("{:.4f}%".format(rwCt / reset_cursor.rowcount))		
         if resumeLast:		
-            check_cursor = execute_sql('SELECT COUNT(*) FROM keywords WHERE id=%(sid)s', { 'sid': row[0] })		
+            check_cursor = execute_sql('SELECT COUNT(*) FROM keywords WHERE postId=%(sid)s', { 'sid': row[0] })		
             check_val = check_cursor.fetchone()		
             print(check_val)		
             if check_val:		
