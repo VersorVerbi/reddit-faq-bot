@@ -114,4 +114,8 @@ class NoRelations(Error):
     def __init__(self, **kwargs):
         self.keyword_list = kwargs['keys']
     pass
+
+class NoKeywords(Error):
+    """no keywords could be found in the source material"""
+    pass
 # endregion

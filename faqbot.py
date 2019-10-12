@@ -356,6 +356,9 @@ def query_results(msg):
             my_reply += '* [' + post.title + '](' + post.permalink + ')\n'
     except faqhelper.NoRelations:
         my_reply = 'Unfortunately, I was not able to identify any posts that match your query.'
+    except faqhelper.NoKeywords:
+        my_reply = 'Unfortunately, I was not able to identify any keywords in your query. Please try again' \
+                   ' with more specific keywords.'
     return my_reply
 
 
@@ -380,6 +383,9 @@ def test_results(pid_to_test):
     except faqhelper.NoRelations as nr:
         message = "Post %s has these keywords: %s\n\nBut I could find no related posts." % \
                   (pid_to_test, nr.keyword_list)
+    except faqhelper.NoKeywords:
+        message = "Post %s does not have specific enough text to identify any keywords." % \
+                  pid_to_test
     return "Test results for post (%s)[%s] (PID: %s)\n\n------\n\n%s" % \
            (post.title, post.permalink, pid_to_test, message)
 # endregion
@@ -397,7 +403,9 @@ def related_posts(post_id):
     cursor.close()
     if related is None or len(related) < MIN_LINKS:
         keywords = post_keywords(post_id)
-        related = search_instead(keywords, related)
+        if keywords is None:
+            raise faqhelper.NoKeywords
+        related = search_instead(keywords, related, post_id)
     return related
 
 
@@ -454,14 +462,24 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
             print("Ignored with no relations")
             mark_as_processed(post_id)
             return ''
+        except faqhelper.NoKeywords:
+            # no valuable words, so no way to find related posts
+            print("Ignored with no keywords")
+            mark_as_processed(post_id)
+            return ''
     elif len(text_set) > 0:
         try:
-            list_of_related_posts, keyword_list = handle_query(text_array, text_set)
+            list_of_related_posts, keyword_list = handle_query(text_array, text_set, False, post_id)
         except faqhelper.NoRelations as nr:
             # nothing is related
             if not reply_to_thread:
                 raise nr
             print("Ignored with no relations")
+            mark_as_processed(post_id)
+            return ''
+        except faqhelper.NoKeywords:
+            # no keywords
+            print("Ignored with no keywords")
             mark_as_processed(post_id)
             return ''
     else:
@@ -559,17 +577,15 @@ def process_comment(cmt):
     cursor.close()
     comment_reply, list_of_posts, list_of_keywords = '', '', ''
     ptitle, text_array, text_set = prepare_post_text(cmt)
-    print(text_array)
     text_array.remove('u')
     text_array.remove(config.REDDIT_USER.lower())
     if 'u' not in text_array:
         text_set.remove('u')
     if config.REDDIT_USER.lower() not in text_array:
         text_set.remove(config.REDDIT_USER.lower())
-    print(text_array)
     try:
         if len(text_set) > 0:
-            list_of_posts, list_of_keywords = handle_query(text_array, text_set)
+            list_of_posts, list_of_keywords = handle_query(text_array, text_set, True)
         else:
             target = cmt.parent()
             if isinstance(target, praw.models.Submission):
@@ -588,10 +604,13 @@ def process_comment(cmt):
                     comment_reply += user_signature(True)
             else:
                 ptitle, text_array, text_set = prepare_post_text(target)
-                list_of_posts, list_of_keywords = handle_query(text_array, text_set)
+                list_of_posts, list_of_keywords = handle_query(text_array, text_set, True, target.id)
     except faqhelper.NoRelations as nr:
         comment_reply = 'I identified the following keywords: %s\n\n' % nr.keyword_list
         comment_reply += 'Unfortunately, I was unable to find any relevant posts in this case.'
+        comment_reply += user_signature(True)
+    except faqhelper.NoKeywords:
+        comment_reply = 'I was unable to identify any keywords. Please try again with more specific words.'
         comment_reply += user_signature(True)
     comment_reply = 'Thanks for using the Catholic FAQ Bot!\n\n' + comment_reply
     if len(list_of_keywords) > 0 and len(list_of_posts) > 0:
@@ -620,7 +639,7 @@ def process_comment(cmt):
     return
 
 
-def handle_query(tarray: list, tset: set, ignore_min_links: bool = False):
+def handle_query(tarray: list, tset: set, ignore_min_links: bool = False, source_post_id: str = ''):
     global db, MIN_LINKS, subr
     if tarray is None or tset is None:
         # this hasn't been handled correctly, so raise an error to notify the administrator
@@ -634,9 +653,11 @@ def handle_query(tarray: list, tset: set, ignore_min_links: bool = False):
     if related is not None:
         related = related.split(',')
     important = ret[2]
+    if important is None:
+        raise faqhelper.NoKeywords
     cursor.close()
     if related is None or (not ignore_min_links and len(related) < MIN_LINKS):
-        related = search_instead(important, related, ignore_min_links)
+        related = search_instead(important, related, ignore_min_links, source_post_id)
     return related, important
 
 
@@ -774,13 +795,15 @@ def prepare_post_text(post):
     return post_title, text_array, text_set
 
 
-def search_instead(keywords, current_post_list, ignore_minimum: bool = False):
+def search_instead(keywords, current_post_list, ignore_minimum: bool = False, source_post_id: str = ''):
     global subr, MIN_LINKS
     link_limit = int(get_setting('numlinks'))
     if current_post_list is None:
         current_post_list = []
     for result in subr.search(keywords, limit=link_limit):
         current_post_list.append(result.id)
+    if source_post_id in current_post_list:
+        current_post_list.remove(source_post_id)
     if not ignore_minimum and len(current_post_list) < MIN_LINKS:
         raise faqhelper.NoRelations(keys=keywords)
     current_post_list = list(set(current_post_list))
