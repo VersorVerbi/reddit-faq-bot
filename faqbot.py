@@ -782,7 +782,7 @@ def search_instead(keywords, current_post_list, ignore_minimum: bool = False):
         current_post_list = []
     for result in subr.search(keywords, limit=link_limit):
         current_post_list.append(result.id)
-    if not ignore_minimum and current_post_list < MIN_LINKS:
+    if not ignore_minimum and len(current_post_list) < MIN_LINKS:
         raise faqhelper.NoRelations(keys=keywords)
     current_post_list = set(current_post_list)
     list_len = len(current_post_list)
