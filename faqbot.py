@@ -52,11 +52,20 @@ def is_link_only(body):
     return re.search(link_pattern, body)
 
 
-def past_is_prologue():
+def is_mod_favorite(post_id):
     global db
-    cursor = execute_sql("UPDATE posts SET isKwProcessed = 1 WHERE isKwProcessed = 0;")
-    db.commit()
+    cursor = execute_sql("SELECT modFavorite FROM posts WHERE id=%(pid)s", {'pid': post_id})
+    fav_row = cursor.fetchone()
+    if fav_row is not None:
+        is_favorite = fav_row[0] > 0
+    else:
+        is_favorite = False
     cursor.close()
+    return is_favorite
+
+
+def past_is_prologue():
+    action_sql("UPDATE posts SET isKwProcessed = 1 WHERE isKwProcessed = 0;")
     return
 
 
@@ -95,12 +104,17 @@ def execute_sql(sql: str, params: object = None, multi: bool = False):
     return cursor
 
 
-def update_setting(setting_name: str, setting_value):
+def action_sql(sql: str, params: object = None, multi: bool = False):
     global db
-    cursor = execute_sql("REPLACE INTO settings (`descriptor`, `value`) VALUES (%(desc)s, %(val)s)",
-                         {'val': setting_value, 'desc': setting_name})
+    cursor = execute_sql(sql, params, multi)
     db.commit()
     cursor.close()
+    return
+
+
+def update_setting(setting_name: str, setting_value):
+    action_sql("REPLACE INTO settings (`descriptor`, `value`) VALUES (%(desc)s, %(val)s)",
+               {'val': setting_value, 'desc': setting_name})
     return 0
 
 
@@ -140,6 +154,20 @@ def get_numbers(string: str):
     return [int(i) for i in string.split() if i.isdigit()]
 
 
+def curated_keyword_weights(keywords: str):
+    kwd_list = keywords.split(',')
+    # calculate the "single" weight, where the total weight is 1 divided by the sum of n -> 1
+    # e.g., with 5 keywords, 5+4+3+2+1=15, so single_weight = 1/15 = ~0.06667
+    n = len(kwd_list)
+    single_weight = 1 / (n * (n + 1) / 2)
+    # save the weighted values, from highest to lowest priority
+    # so with our 5-word example, that's 5/15=1/3, 4/15, 3/15=1/5, 2/15, 1/15
+    weighted_kwds: Dict = {}
+    for i in range(n, 0, -1):
+        weighted_kwds[kwd_list[i]] = i * single_weight
+    return weighted_kwds
+
+
 def post_reply(reply_to, reply_with):
     reply_to.reply(reply_with)
     return
@@ -149,16 +177,14 @@ def mark_as_processed(post_id: str = None):
     if post_id is None:
         past_is_prologue()
     else:
-        cursor = execute_sql('UPDATE posts SET isKwProcessed = 1 WHERE id = %(pid)s;', {'pid': post_id})
-        db.commit()
-        cursor.close()
+        action_sql('UPDATE posts SET isKwProcessed = 1 WHERE id = %(pid)s;', {'pid': post_id})
     return
 # endregion
 
 
 # region command functions
 def add_favorite(new_favorite):
-    global db, r
+    global r
     if new_favorite is None:
         raise faqhelper.MissingParameter
     elif r.submission(new_favorite) is None:
@@ -169,9 +195,7 @@ def add_favorite(new_favorite):
     if cursor.fetchone()[0] > 0:
         raise faqhelper.IncorrectState
     cursor.close()
-    cursor = execute_sql('UPDATE posts SET posts.modFavorite = 1 WHERE posts.id = %(pid)s', {'pid': new_favorite})
-    db.commit()
-    cursor.close()
+    action_sql('UPDATE posts SET posts.modFavorite = 1 WHERE posts.id = %(pid)s', {'pid': new_favorite})
     return 0
 
 
@@ -187,9 +211,52 @@ def remove_favorite(fav_to_remove):
     if cursor.fetchone()[0] <= 0:
         raise faqhelper.IncorrectState
     cursor.close()
-    cursor = execute_sql('UPDATE posts SET posts.modFavorite = 0 WHERE posts.id = %(pid)s', {'pid': fav_to_remove})
-    db.commit()
+    action_sql('UPDATE posts SET posts.modFavorite = 0 WHERE posts.id = %(pid)s', {'pid': fav_to_remove})
+    return 0
+
+
+def add_curated(keywords, msg_body):
+    if keywords is None or msg_body is None or len(msg_body) == 0:
+        raise faqhelper.MissingParameter
+    # get just the words from our comma-delimited list, no spaces
+    kwd_list = [kwd.strip() for kwd in keywords.split(',')]
+    # TODO: Literal string of keywords isn't ideal; how else can we (1) retain the priority list and (2) have a more
+    #  searchable database of curated keywords?
+    action_sql("INSERT INTO curated (keywords, body) VALUES (%(k)s, %(b)s", {'k': ','.join(kwd_list), 'b': msg_body})
+    return 0
+
+
+def edit_curated(command_args, msg_body):
+    global db
+    response_id = command_args[0]
+    new_keywords = command_args[1:]
+    if response_id is None or (len(new_keywords) == 0 and (msg_body is None or len(msg_body) == 0)):
+        raise faqhelper.MissingParameter
+    kwd_string = ''.join([kwd.strip() for kwd in new_keywords])
+    cursor = execute_sql("SELECT COUNT(*) FROM curated WHERE id=%(id)s", {'id': response_id})
+    if cursor.fetchone()[0] <= 0:
+        raise faqhelper.IncorrectState
     cursor.close()
+    if len(new_keywords) == 0:
+        action_sql("UPDATE curated SET curated.body = %(b)s WHERE id = %(id)s", {'b': msg_body, 'id': response_id})
+    elif msg_body is None or len(msg_body) == 0:
+        action_sql("UPDATE curated SET curated.keywords = %(k)s WHERE id = %(id)s", {'k': kwd_string,
+                                                                                     'id': response_id})
+    else:
+        action_sql("UPDATE curated SET curated.body = %(b)s, curated.keywords = %(k)s WHERE id = %(id)s",
+                   {'b': msg_body, 'k': kwd_string, 'id': response_id})
+    return 0
+
+
+def remove_curated(response_id):
+    global db
+    if response_id is None:
+        raise faqhelper.MissingParameter
+    cursor = execute_sql("SELECT COUNT(*) FROM curated WHERE id=%(id)s", {'id': response_id})
+    if cursor.fetchone()[0] <= 0:
+        raise faqhelper.IncorrectState
+    cursor.close()
+    action_sql("DELETE FROM curated WHERE id = %(id)s", {'id': response_id})
     return 0
 
 
@@ -214,14 +281,11 @@ def update_numlinks(numlinks):
 
 
 def ignore_token(token):
-    global db
     if token is None:
         raise faqhelper.MissingParameter
-    cursor = execute_sql('UPDATE tokens '
-                         'SET tokens.document_count = tokens.document_count + 1000 '
-                         'WHERE tokens.token LIKE %(tok)s', {'tok': token})
-    db.commit()
-    cursor.close()
+    action_sql('UPDATE tokens '
+               'SET tokens.document_count = tokens.document_count + 1000 '
+               'WHERE tokens.token LIKE %(tok)s', {'tok': token})
     return 0
 # endregion
 
@@ -405,7 +469,7 @@ def related_posts(post_id):
         keywords = post_keywords(post_id)
         if keywords is None:
             raise faqhelper.NoKeywords
-        related = search_instead(keywords, related, post_id)
+        related = search_instead(keywords, related, source_post_id=post_id)
     return related
 
 
@@ -503,13 +567,18 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
         if len(thread.comments) > 0:
             i = 0
             top_comment: praw.models.Comment = thread.comments[i]
-            while top_comment.author is None or top_comment.banned_by is not None:
+            tc_check: bool = top_comment.author is None or top_comment.banned_by is not None
+            while tc_check and (i + 1) < len(thread.comments):
                 i += 1
                 top_comment = thread.comments[i]
+                tc_check = top_comment.author is None or top_comment.banned_by is not None
+            if tc_check:
+                top_comment = None
         else:
             top_comment = None
         output_data['title'].append(thread.title)
         output_data['url'].append('https://np.reddit.com' + thread.permalink)
+        output_data['modFav'].append(is_mod_favorite(pid))
         if top_comment is not None:
             if top_comment.score > output_data['top_cmt_votes']:
                 output_data['top_cmt_votes'] = top_comment.score
@@ -539,8 +608,11 @@ def post_analysis_message(keyword_list, output_data):
     reply_body = 'Our analysis of this post indicates that the keywords are: ' + keyword_list + '\n\n'
     reply_body += 'Here are some other posts that are related:\n\n'
     comment_body = ''
-    for title, url in zip(output_data['title'], output_data['url']):
-        reply_body += '* [' + title + '](' + url + ')\n'
+    for title, url, modFav in zip(output_data['title'], output_data['url'], output_data['modFav']):
+        reply_body += '* [' + title + '](' + url + ')'
+        if modFav:
+            reply_body += ' **r/' + config.SUBREDDIT + ' moderator favorite!**'
+        reply_body += '\n'
     reply_signature = user_signature(True)
     if not DISABLE_COMMENT_QUOTING:
         reply_body += '\nThe top-voted comment from those threads is this one:\n\n'
@@ -572,9 +644,7 @@ def process_comment(cmt):
         mark_as_processed(cmt.id)
         return
     # we have been summoned
-    cursor = execute_sql('INSERT IGNORE INTO posts (id) VALUES (%(pid)s)', {'pid': cmt.id})
-    db.commit()
-    cursor.close()
+    action_sql('INSERT IGNORE INTO posts (id) VALUES (%(pid)s)', {'pid': cmt.id})
     comment_reply, list_of_posts, list_of_keywords = '', '', ''
     ptitle, text_array, text_set = prepare_post_text(cmt)
     text_array.remove('u')
@@ -701,9 +771,7 @@ def token_counting(post, post_title, text_array, text_set):
     # get post text data
     post_id = post.id
     # add post_id to posts SQL table (have to do this first so foreign keys in other SQL tables don't complain)
-    cursor = execute_sql('INSERT IGNORE INTO posts (id) VALUES (%(pid)s)', {'pid': post_id})
-    db.commit()
-    cursor.close()
+    action_sql('INSERT IGNORE INTO posts (id) VALUES (%(pid)s)', {'pid': post_id})
     # loop through tokens and add them to the database
     print("Adding tokens for post %s: \"%s\"" % (post_id, post_title))
     for token in text_set:
@@ -737,17 +805,12 @@ def token_counting(post, post_title, text_array, text_set):
             # update tokens table
             if cursor is not None:
                 cursor.close()
-            cursor = execute_sql('UPDATE tokens SET document_count = document_count + 1 WHERE id=%(tid)s',
-                                 {'tid': new_token_id})
-            db.commit()
-            cursor.close()
+            action_sql('UPDATE tokens SET document_count = document_count + 1 WHERE id=%(tid)s', {'tid': new_token_id})
             
         # add to keywords table
-        cursor = execute_sql('INSERT IGNORE INTO keywords (tokenId, postId, num_in_post) '
-                             'VALUES (%(tid)s, %(pid)s, %(count)s)',
-                             {'tid': new_token_id, 'pid': post_id, 'count': count})
-        db.commit()
-        cursor.close()
+        action_sql('INSERT IGNORE INTO keywords (tokenId, postId, num_in_post) '
+                   'VALUES (%(tid)s, %(pid)s, %(count)s)',
+                   {'tid': new_token_id, 'pid': post_id, 'count': count})
     return
 
 
@@ -986,68 +1049,67 @@ def main_loop():
     return
 
 
-# main -----------------------------------
-r = get_reddit()
+if __name__ == '__main__':
+    # main -----------------------------------
+    r = get_reddit()
 
-# local debug test
-strm = get_stream()
-# end local debug test
+    # local debug test
+    strm = get_stream()
+    # end local debug test
 
 
-db = get_mysql_connection()
+    db = get_mysql_connection()
 
-if len(sys.argv) > 1:
-    fromCrash = (sys.argv[1] != 'initial')
-    fullReset = (sys.argv[1] == 'reset')
-    if len(sys.argv) > 2:
-        resumeLast = (sys.argv[2] == 'resume')
+    if len(sys.argv) > 1:
+        fromCrash = (sys.argv[1] != 'initial')
+        fullReset = (sys.argv[1] == 'reset')
+        if len(sys.argv) > 2:
+            resumeLast = (sys.argv[2] == 'resume')
+        else:
+            resumeLast = False
     else:
+        fromCrash = True
+        fullReset = False
         resumeLast = False
-else:
-    fromCrash = True
-    fullReset = False
-    resumeLast = False
 
-exists_cursor = execute_sql('SHOW TABLES LIKE %(tbl)s', {'tbl': 'keywords'})
-exists = exists_cursor.fetchone()
-if not exists:
-    fullReset = False
-    fromCrash = False
-    execute_sql_file('tables.sql')
-    execute_sql_file('procedures.sql')
-    execute_sql_file('functions.sql')
-    reset_all_settings()
-exists_cursor.close()
-    
-if fullReset:
-    fromCrash = False
-    if not resumeLast:
-        reset_cursor = execute_sql("TRUNCATE keywords; DELETE FROM tokens;", multi=True) # MySQL complains if you try to truncate when you have a related foreign key, but you can delete if the foreign key is set up correctly
-        db.commit()
-        reset_cursor.close()
-    reset_cursor = execute_sql("SELECT id FROM posts;")
-    posts_to_delete = []
-    rwCt = 0
-    for row in reset_cursor:
-        rwCt = rwCt + 1
-        print("{:.2f}%".format(rwCt / reset_cursor.rowcount * 100.0))
-        if resumeLast:
-            check_cursor = execute_sql('SELECT COUNT(*) FROM keywords WHERE postId=%(sid)s', { 'sid': row[0] })
-            check_val = check_cursor.fetchone()
-            if check_val[0]:
+    exists_cursor = execute_sql('SHOW TABLES LIKE %(tbl)s', {'tbl': 'keywords'})
+    exists = exists_cursor.fetchone()
+    if not exists:
+        fullReset = False
+        fromCrash = False
+        execute_sql_file('tables.sql')
+        execute_sql_file('procedures.sql')
+        execute_sql_file('functions.sql')
+        reset_all_settings()
+    exists_cursor.close()
+
+    if fullReset:
+        fromCrash = False
+        if not resumeLast:
+            action_sql("TRUNCATE keywords; DELETE FROM tokens;", multi=True)
+            # MySQL complains if you try to truncate when you have a related foreign key,
+            # but you can delete if the foreign key is set up correctly
+        reset_cursor = execute_sql("SELECT id FROM posts;")
+        posts_to_delete = []
+        rwCt = 0
+        for row in reset_cursor:
+            rwCt = rwCt + 1
+            print("{:.2f}%".format(rwCt / reset_cursor.rowcount * 100.0))
+            if resumeLast:
+                check_cursor = execute_sql('SELECT COUNT(*) FROM keywords WHERE postId=%(sid)s', { 'sid': row[0] })
+                check_val = check_cursor.fetchone()
+                if check_val[0]:
+                    continue
+            curpost = r.submission(row[0])
+            try:
+                title, reset_text_array, reset_text_set = prepare_post_text(curpost)
+                token_counting(curpost, title, reset_text_array, reset_text_set)
+            except prawcore.exceptions.NotFound: # don't try to reanalyze posts that have been deleted
+                posts_to_delete.append(curpost.id)
                 continue
-        curpost = r.submission(row[0])
-        try:
-            title, reset_text_array, reset_text_set = prepare_post_text(curpost)
-            token_counting(curpost, title, reset_text_array, reset_text_set)
-        except prawcore.exceptions.NotFound: # don't try to reanalyze posts that have been deleted
-            posts_to_delete.append(curpost.id)
-            continue
-    reset_cursor.close()
-    sql_delete = '\'' + '\',\''.join(posts_to_delete) + '\''
-    delete_cursor = execute_sql('DELETE FROM `posts` WHERE id IN (%(pid)s)', {'pid': sql_delete})
-    db.commit()
-    delete_cursor.close()
-    reset_all_settings()
+        reset_cursor.close()
+        sql_delete = '\'' + '\',\''.join(posts_to_delete) + '\''
+        action_sql('DELETE FROM `posts` WHERE id IN (%(pid)s)', {'pid': sql_delete})
+        reset_all_settings()
 
-main_loop()
+    main_loop()

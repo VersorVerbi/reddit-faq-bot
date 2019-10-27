@@ -8,7 +8,10 @@ ADMIN_COMMANDS = {
     'NUMLINKS': 'update_numlinks(cmd[1])',
     'QUERY': 'command_ok()',
     'REDUCEUNIQUENESS': 'ignore_token(cmd[1])',
-    'TEST': 'command_ok()'
+    'TEST': 'command_ok()',
+    'CURATE': 'add_curated(\'\'.join(cmd[1:]), msg.body)',
+    'RECURATE': 'edit_curated(cmd[1:], msg.body)',
+    'TRASH': 'remove_curated(cmd[1])'
 }
 
 ADMIN_REPLIES = {
@@ -20,7 +23,10 @@ ADMIN_REPLIES = {
     'NUMLINKS': 'new_numlinks(cmd[1])',
     'QUERY': 'query_results(msg)',
     'REDUCEUNIQUENESS': 'token_ignored(cmd[1])',
-    'TEST': 'test_results(cmd[1])'
+    'TEST': 'test_results(cmd[1])',
+    'CURATE': 'curated_added(cmd[1])',
+    'RECURATE': 'curated_edited(cmd[1])',
+    'TRASH': 'curated_removed(cmd[1])'
 }
 
 ADMIN_DESCRIPTIONS = {
@@ -49,8 +55,23 @@ ADMIN_DESCRIPTIONS = {
                'Use this command to see (1) evaluated keywords and (2) related posts as determined by the bot. This '
                'can be helpful for determining false positives, figuring out mod favorites, adding specific posts '
                'to the database that may have ended up outside our initial queries, and improving the responses of '
-               'the bot in general.'
+               'the bot in general.',
+    'CURATE keywords': 'Where `keywords` is the comma-delimited list of keywords for which this curated response is '
+                       'relevant, sorted from most relevant to least relevant. (This weighted priority will be '
+                       'used to determine when to show this response, and when this response is more relevant than '
+                       'some other response on a similar topic.) The body of your message should be the exact content '
+                       'you want displayed for this curated comment.',
+    'RECURATE id newkeywords': 'Where `id` is the database ID of the curated response you want (send a `DATA` message '
+                               'to the bot to get a list of those) and `newkeywords` is the (optional) new comma-'
+                               'delimited list of keywords for the curated response. The body of your message should '
+                               'be an (optional) updated content for the curated response. Either `newkeywords` or the '
+                               'new content must be included, or else your update request will fail.',
+    'TRASH id': 'Where `id` is the database ID of the curated response to want to get rid of (send a `DATA` message '
+                'to the bot to get a list of those). The curated response will be permanently deleted. You will not be '
+                'asked again. You will not be able to retrieve it after doing so. Use with caution.'
 }
+
+
 # endregion
 
 
@@ -113,7 +134,9 @@ class NoRelations(Error):
 
     def __init__(self, **kwargs):
         self.keyword_list = kwargs['keys']
+
     pass
+
 
 class NoKeywords(Error):
     """no keywords could be found in the source material"""
