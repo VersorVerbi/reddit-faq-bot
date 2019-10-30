@@ -200,7 +200,7 @@ def add_favorite(new_favorite):
 
 
 def remove_favorite(fav_to_remove):
-    global db, r
+    global r
     if fav_to_remove is None:
         raise faqhelper.MissingParameter
     elif r.submission(fav_to_remove) is None:
@@ -634,7 +634,7 @@ def post_analysis_message(keyword_list, output_data):
 
 
 def process_comment(cmt):
-    global subr, r, db
+    global r
     if cmt is None:
         return
     if post_is_processed(cmt.id):
@@ -710,7 +710,7 @@ def process_comment(cmt):
 
 
 def handle_query(tarray: list, tset: set, ignore_min_links: bool = False, source_post_id: str = ''):
-    global db, MIN_LINKS, subr
+    global db, MIN_LINKS
     if tarray is None or tset is None:
         # this hasn't been handled correctly, so raise an error to notify the administrator
         raise SyntaxError
@@ -1049,14 +1049,9 @@ def main_loop():
     return
 
 
+# main -----------------------------------
 if __name__ == '__main__':
-    # main -----------------------------------
     r = get_reddit()
-
-    # local debug test
-    strm = get_stream()
-    # end local debug test
-
 
     db = get_mysql_connection()
 
