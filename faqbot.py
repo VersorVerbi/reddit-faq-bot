@@ -554,7 +554,8 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
         'title': [],
         'url': [],
         'top_cmt_votes': 0,
-        'top_cmt': None
+        'top_cmt': None,
+        'mod_fav': []
     }
 
     for pid in list_of_related_posts:
@@ -578,7 +579,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
             top_comment = None
         output_data['title'].append(thread.title)
         output_data['url'].append('https://np.reddit.com' + thread.permalink)
-        output_data['modFav'].append(is_mod_favorite(pid))
+        output_data['mod_fav'].append(is_mod_favorite(pid))
         if top_comment is not None:
             if top_comment.score > output_data['top_cmt_votes']:
                 output_data['top_cmt_votes'] = top_comment.score
@@ -608,7 +609,7 @@ def post_analysis_message(keyword_list, output_data):
     reply_body = 'Our analysis of this post indicates that the keywords are: ' + keyword_list + '\n\n'
     reply_body += 'Here are some other posts that are related:\n\n'
     comment_body = ''
-    for title, url, modFav in zip(output_data['title'], output_data['url'], output_data['modFav']):
+    for title, url, modFav in zip(output_data['title'], output_data['url'], output_data['mod_fav']):
         reply_body += '* [' + title + '](' + url + ')'
         if modFav:
             reply_body += ' **r/' + config.SUBREDDIT + ' moderator favorite!**'
