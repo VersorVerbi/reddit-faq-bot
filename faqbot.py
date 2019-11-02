@@ -305,7 +305,7 @@ def user_signature(is_public=False):
     output = '\n\n------\n\n^^I ^^am ^^a ^^robot ^^and ^^this ^^action ^^was ^^performed ^^automatically.\n\n'
     if is_public:
         output += '^^If ^^what ^^I ^^have ^^done ^^is ^^wrong ^^or ^^inappropriate, ^^downvote ^^me ^^below ^^zero ' \
-                  '^^and ^^I\'ll ^^delete ^^this ^^comment.'
+                  '^^and ^^I\'ll ^^delete ^^this ^^comment. '
     output += '^^Tag ^^me ^^with ^^a ^^query ^^to ^^get ^^my ^^response, ^^or ^^just ^^tag ^^me ^^to ^^get ^^my ' \
               '^^response ^^to ^^the ^^parent ^^comment/post.\n\n'
     output += '^^PM ^^me ^^a ^^query ^^for ^^a ^^private ^^response.\n\n'
