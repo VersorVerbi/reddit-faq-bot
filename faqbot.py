@@ -163,8 +163,9 @@ def curated_keyword_weights(keywords: str):
     # save the weighted values, from highest to lowest priority
     # so with our 5-word example, that's 5/15=1/3, 4/15, 3/15=1/5, 2/15, 1/15
     weighted_kwds: Dict = {}
-    for i in range(n, 0, -1):
-        weighted_kwds[kwd_list[i]] = i * single_weight
+    for i in range(n, 0, -1):  # python i in range does not include the last value of the range
+        source_pos = abs(i - n)  # so we go from high weight to low weight, but position 0 to position n-1
+        weighted_kwds[kwd_list[source_pos]] = i * single_weight
     return weighted_kwds
 
 
@@ -219,10 +220,19 @@ def add_curated(keywords, msg_body):
     if keywords is None or msg_body is None or len(msg_body) == 0:
         raise faqhelper.MissingParameter
     # get just the words from our comma-delimited list, no spaces
-    kwd_list = [kwd.strip() for kwd in keywords.split(',')]
-    # TODO: Literal string of keywords isn't ideal; how else can we (1) retain the priority list and (2) have a more
-    #  searchable database of curated keywords?
-    action_sql("INSERT INTO curated (keywords, body) VALUES (%(k)s, %(b)s", {'k': ','.join(kwd_list), 'b': msg_body})
+    kwd_list = [kwd.strip().lower() for kwd in keywords.split(',')]
+    cursor = execute_sql("INSERT INTO curated (body) VALUES (%(b)s", {'b': msg_body})
+    new_curated_id = cursor.lastrowid
+    sql_keywords = '\',\''.join(kwd_list)
+    action_sql("INSERT INTO curatedKeywords (curatedId, tokenId) VALUES (%(cid)s, "
+               "SELECT tokens.id FROM tokens WHERE tokens.token IN (%(kwd)s))", {'cid': new_curated_id,
+                                                                                 'kwd': sql_keywords})
+    cursor.close()
+    weights = curated_keyword_weights(kwd_list)
+    for i in range(0,len(weights)):
+        action_sql("UPDATE curatedKeywords SET weight = %(wt)s WHERE curatedId = %(cid)s AND"
+                   "tokenId = (SELECT tokens.id FROM tokens WHERE tokens.token = %(kwd)s",
+                   {'wt': weights[i], 'cid': new_curated_id, 'kwd': kwd_list[i]})
     return 0
 
 
@@ -232,19 +242,18 @@ def edit_curated(command_args, msg_body):
     new_keywords = command_args[1:]
     if response_id is None or (len(new_keywords) == 0 and (msg_body is None or len(msg_body) == 0)):
         raise faqhelper.MissingParameter
-    kwd_string = ''.join([kwd.strip() for kwd in new_keywords])
+    kwd_string = '\',\''.join([kwd.strip() for kwd in new_keywords])
     cursor = execute_sql("SELECT COUNT(*) FROM curated WHERE id=%(id)s", {'id': response_id})
     if cursor.fetchone()[0] <= 0:
         raise faqhelper.IncorrectState
     cursor.close()
-    if len(new_keywords) == 0:
+    if msg_body is not None and len(msg_body) > 0:
         action_sql("UPDATE curated SET curated.body = %(b)s WHERE id = %(id)s", {'b': msg_body, 'id': response_id})
-    elif msg_body is None or len(msg_body) == 0:
-        action_sql("UPDATE curated SET curated.keywords = %(k)s WHERE id = %(id)s", {'k': kwd_string,
-                                                                                     'id': response_id})
-    else:
-        action_sql("UPDATE curated SET curated.body = %(b)s, curated.keywords = %(k)s WHERE id = %(id)s",
-                   {'b': msg_body, 'k': kwd_string, 'id': response_id})
+    if len(new_keywords) > 0:
+        action_sql("DELETE FROM curatedKeywords WHERE curatedId=%(id)s", {'id': response_id})
+        action_sql("INSERT INTO curatedKeywords VALUES (%(id)s, "
+                   "SELECT tokens.id FROM tokens WHERE tokens.token IN (%(k)s)", {'id': response_id,
+                                                                                  'k': kwd_string})
     return 0
 
 
@@ -257,6 +266,7 @@ def remove_curated(response_id):
         raise faqhelper.IncorrectState
     cursor.close()
     action_sql("DELETE FROM curated WHERE id = %(id)s", {'id': response_id})
+    # don't need to deal with curatedKeywords because the foreign key cascades on deletion
     return 0
 
 
@@ -337,6 +347,10 @@ def improper_params(cmd):
         output += 'was true:\n\n*the indicated id did not exist,\n*the thread was not on r/'
         output += config.SUBREDDIT + ', or\n*the specified thread was already on (or off) the '
         output += 'favorites list. Please try again with an appropriate thread.'
+    elif 'CURAT' in cmd.upper():
+        output = 'You have attempted to edit or delete a curated response, but the supplied ID '
+        output += 'could not be found. Send a DATA request to me to get a list of curated responses '
+        output += 'and their IDs, and try again with an appropriate ID.'
     else:
         output = 'You have attempted to change a number setting, but have supplied a negative '
         output += 'number or one greater than 10 (>10). Please try again with an appropriate '
@@ -465,12 +479,19 @@ def related_posts(post_id):
     if related is not None:
         related = related.split(',')
     cursor.close()
-    if related is None or len(related) < MIN_LINKS:
-        keywords = post_keywords(post_id)
-        if keywords is None:
-            raise faqhelper.NoKeywords
-        related = search_instead(keywords, related, source_post_id=post_id)
-    return related
+    keywords = post_keywords(post_id)
+    if keywords is None:
+        raise faqhelper.NoKeywords
+    curated = get_curated(keywords)
+    try:
+        if related is None or len(related) < MIN_LINKS:
+            related = search_instead(keywords, related, source_post_id=post_id)
+    except faqhelper.NoRelations as nr:
+        if curated is None:
+            raise nr
+        else:
+            pass
+    return related, curated
 
 
 def post_keywords(post_id):
@@ -509,16 +530,16 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
 
     post_title, text_array, text_set = prepare_post_text(post)
 
+    # we don't have to count this again if we already have
+    cursor = execute_sql("SELECT id FROM posts WHERE `id`=%(pid)s", {'pid': post_id})
+    exists_row = cursor.fetchone()
+    if exists_row is None:
+        token_counting(post, post_title, text_array, text_set)
+    cursor.close()
+
     if len(text_set) > 25:
-        # we don't have to count this again if we already have
-        cursor = execute_sql("SELECT id FROM posts WHERE `id`=%(pid)s", {'pid': post_id})
-        exists_row = cursor.fetchone()
-        if exists_row is None:
-            token_counting(post, post_title, text_array, text_set)
-        cursor.close()
-        keyword_list: str = post_keywords(post_id)
         try:
-            list_of_related_posts: List[str] = related_posts(post_id)
+            list_of_related_posts, curated_comment = related_posts(post_id)
         except faqhelper.NoRelations as nr:
             # literally nothing is related, so there's nothing we can do here
             if not reply_to_thread:
@@ -533,7 +554,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
             return ''
     elif len(text_set) > 0:
         try:
-            list_of_related_posts, keyword_list = handle_query(text_array, text_set, False, post_id)
+            list_of_related_posts, keyword_list, curated_comment = handle_query(text_array, text_set, False, post_id)
         except faqhelper.NoRelations as nr:
             # nothing is related
             if not reply_to_thread:
@@ -727,9 +748,32 @@ def handle_query(tarray: list, tset: set, ignore_min_links: bool = False, source
     if important is None:
         raise faqhelper.NoKeywords
     cursor.close()
-    if related is None or (not ignore_min_links and len(related) < MIN_LINKS):
-        related = search_instead(important, related, ignore_min_links, source_post_id)
-    return related, important
+    curated = get_curated(important)
+    try:
+        if related is None or (not ignore_min_links and len(related) < MIN_LINKS):
+            related = search_instead(important, related, ignore_min_links, source_post_id)
+    except faqhelper.NoRelations as nr:
+        if curated is None:
+            raise nr
+        else:
+            pass
+    return related, important, curated
+
+
+def get_curated(keywords):
+    curated = None
+    sql_keywords = '\',\''.join([kwd.strip().lower() for kwd in keywords.split(',')])
+    cursor = execute_sql("SELECT curated.body, score "
+                         "FROM curated, (SELECT curatedId AS cid, COUNT(*) AS c, AVG(curatedKeywords.weight) AS score "
+                         "      FROM curatedKeywords WHERE tokenId IN "
+                         "          (SELECT tokens.id "
+                         "          FROM tokens "
+                         "          WHERE tokens.token IN (%(kwd)s)) "
+                         "      GROUP BY cid "
+                         "      ORDER BY c "
+                         "      DESC LIMIT 1) AS curatedSearch "
+                         "WHERE curated.id = cid", {'kwd': sql_keywords})
+    return curated
 
 
 def retrieve_token_counts(submissions):
