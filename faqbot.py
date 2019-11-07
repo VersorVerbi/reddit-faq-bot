@@ -426,7 +426,7 @@ def query_results(msg):
         if 'query' not in text_array:
             text_set.remove('query')
     try:
-        post_list, impt_words = handle_query(text_array, text_set, True)
+        post_list, impt_words, curated_response = handle_query(text_array, text_set, True)
         my_reply = 'The keywords of your query seem to be: %s\n\n'\
                    'Here are the related posts I found:' % impt_words
         for pid in ','.split(post_list):
@@ -538,6 +538,7 @@ def process_post(post: praw.models.Submission, reply_to_thread: bool = True, rep
     cursor.close()
 
     if len(text_set) > 25:
+        keyword_list: str = post_keywords(post_id)
         try:
             list_of_related_posts, curated_comment = related_posts(post_id)
         except faqhelper.NoRelations as nr:
@@ -677,7 +678,7 @@ def process_comment(cmt):
         text_set.remove(config.REDDIT_USER.lower())
     try:
         if len(text_set) > 0:
-            list_of_posts, list_of_keywords = handle_query(text_array, text_set, True)
+            list_of_posts, list_of_keywords, curated_response = handle_query(text_array, text_set, True)
         else:
             target = cmt.parent()
             if isinstance(target, praw.models.Submission):
@@ -696,7 +697,7 @@ def process_comment(cmt):
                     comment_reply += user_signature(True)
             else:
                 ptitle, text_array, text_set = prepare_post_text(target)
-                list_of_posts, list_of_keywords = handle_query(text_array, text_set, True, target.id)
+                list_of_posts, list_of_keywords, curated_response = handle_query(text_array, text_set, True, target.id)
     except faqhelper.NoRelations as nr:
         comment_reply = 'I identified the following keywords: %s\n\n' % nr.keyword_list
         comment_reply += 'Unfortunately, I was unable to find any relevant posts in this case.'
