@@ -987,9 +987,7 @@ def get_stream(**kwargs) -> praw.models.util.stream_generator:
 
 
 def handle_command_message(msg):
-    global r, db, subr, reply_message
-    for mod in subr.moderator():
-        VALID_ADMINS.append(str(mod))
+    global r, db, reply_message, VALID_ADMINS
     if msg.author not in VALID_ADMINS:
         if msg.author == config.REDDIT_USER:
             # ignore myself
@@ -1031,9 +1029,13 @@ def handle_command_message(msg):
 
 
 def main_loop():
-    global r, db, subr, MIN_LINKS
+    global r, db, subr, MIN_LINKS, VALID_ADMINS
     try:
         subr = r.subreddit(config.SUBREDDIT)
+        VALID_ADMINS.clear()
+        VALID_ADMINS.append(config.ADMIN_USER)
+        for mod in subr.moderator():
+            VALID_ADMINS.append(str(mod))
         initial_data_load(subr)
         MIN_LINKS = get_setting('minlinks', 3)
         print("Initial load done")
@@ -1059,9 +1061,6 @@ def main_loop():
                         print("Ignored as already processed")
                 else:
                     process_comment(caller)
-                if len(VALID_ADMINS) > 1:
-                    VALID_ADMINS.clear()
-                    VALID_ADMINS.append(config.ADMIN_USER)
                 if isinstance(caller, praw.models.Message):
                     caller.delete()
             # review old comments looking for downvotes
